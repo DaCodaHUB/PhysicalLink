@@ -6,6 +6,7 @@ import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
 import android.content.Context
+import android.util.Log
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
@@ -36,6 +37,11 @@ class BleScanner(context: Context) {
             callbackType: Int,
             result: ScanResult
         ) {
+            Log.d(
+                "PhysicalLink",
+                "Found: ${result.scanRecord?.deviceName}, RSSI=${result.rssi}"
+            )
+
             val name = result.scanRecord?.deviceName
                 ?: result.device.name
                 ?: return
@@ -79,7 +85,7 @@ class BleScanner(context: Context) {
             bleScanner.startScan(null, settings, callback)
         } catch (e: SecurityException) {
             scanning = false
-            android.util.Log.e("PhysicalLink", "Missing BLE permission", e)
+            Log.e("PhysicalLink", "Missing BLE permission", e)
         }
     }
 

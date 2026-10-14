@@ -15,6 +15,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.dacodahub.physicallink.ble.ConnectionState
 
 class MainActivity : ComponentActivity() {
 
@@ -25,6 +26,12 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val devices by viewModel.devices.collectAsStateWithLifecycle()
+
+            val connectionState by viewModel.connectionState
+                .collectAsStateWithLifecycle()
+
+            val readings by viewModel.readings
+                .collectAsStateWithLifecycle()
 
             val permissions = if (Build.VERSION.SDK_INT >= 31) {
                 arrayOf(
@@ -74,6 +81,26 @@ class MainActivity : ComponentActivity() {
                     Text("Stop scan")
                 }
 
+                when (connectionState) {
+                    ConnectionState.ConnectionLost -> {
+                        Text("Connection lost. Check that the ESP32 is powered on.")
+
+                        Button(onClick = viewModel::startScan) {
+                            Text("Scan again")
+                        }
+                    }
+
+                    is ConnectionState.Error -> {
+                        Text((connectionState as ConnectionState.Error).message)
+
+                        Button(onClick = viewModel::startScan) {
+                            Text("Try again")
+                        }
+                    }
+
+                    else -> Unit
+                }
+
                 devices.forEach { device ->
                     ElevatedCard(
                         modifier = Modifier.fillMaxWidth()
@@ -82,8 +109,26 @@ class MainActivity : ComponentActivity() {
                             Text(device.name)
                             Text(device.address)
                             Text("RSSI: ${device.rssi} dBm")
+                            Button(onClick = { viewModel.connect(device.address) }) {
+                                Text("Connect")
+                            }
                         }
                     }
+                }
+
+                Text("Connection: $connectionState")
+
+                if (connectionState is ConnectionState.Connected) {
+                    Button(onClick = viewModel::disconnect) {
+                        Text("Disconnect")
+                    }
+                }
+
+                if (connectionState is ConnectionState.Connected) {
+                    Text("Soil: ${readings.soil}")
+                    Text("Temperature: ${readings.temperature} °C")
+                    Text("Humidity: ${readings.humidity} %")
+                    Text("Pressure: ${readings.pressure} hPa")
                 }
             }
         }

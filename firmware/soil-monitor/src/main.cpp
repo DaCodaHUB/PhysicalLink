@@ -23,6 +23,20 @@ NimBLECharacteristic* temperatureCharacteristic;
 NimBLECharacteristic* humidityCharacteristic;
 NimBLECharacteristic* pressureCharacteristic;
 
+class ServerCallbacks : public NimBLEServerCallbacks {
+    void onDisconnect(
+        NimBLEServer* server,
+        NimBLEConnInfo& connInfo,
+        int reason
+    ) override {
+        Serial.println("BLE client disconnected");
+
+        NimBLEDevice::startAdvertising();
+    }
+};
+
+ServerCallbacks serverCallbacks;
+
 void setup() {
     Serial.begin(115200);
     delay(1000);
@@ -51,6 +65,7 @@ void setup() {
     NimBLEDevice::init("PhysicalLink Soil");
 
     NimBLEServer* server = NimBLEDevice::createServer();
+    server->setCallbacks(&serverCallbacks);
 
     NimBLEService* service =
         server->createService(SERVICE_UUID);
