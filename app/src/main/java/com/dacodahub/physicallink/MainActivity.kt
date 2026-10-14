@@ -81,6 +81,12 @@ class MainActivity : ComponentActivity() {
                     Text("Stop scan")
                 }
 
+                if (connectionState is ConnectionState.Connected) {
+                    Button(onClick = viewModel::disconnect) {
+                        Text("Disconnect")
+                    }
+                }
+
                 val showDevices = when (connectionState) {
                     ConnectionState.Disconnected,
                     ConnectionState.ConnectionLost,
