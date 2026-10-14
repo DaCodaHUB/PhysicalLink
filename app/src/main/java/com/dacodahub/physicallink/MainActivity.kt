@@ -81,54 +81,76 @@ class MainActivity : ComponentActivity() {
                     Text("Stop scan")
                 }
 
-                when (connectionState) {
-                    ConnectionState.ConnectionLost -> {
-                        Text("Connection lost. Check that the ESP32 is powered on.")
+                val showDevices = when (connectionState) {
+                    ConnectionState.Disconnected,
+                    ConnectionState.ConnectionLost,
+                    is ConnectionState.Error -> true
 
-                        Button(onClick = viewModel::startScan) {
-                            Text("Scan again")
-                        }
-                    }
-
-                    is ConnectionState.Error -> {
-                        Text((connectionState as ConnectionState.Error).message)
-
-                        Button(onClick = viewModel::startScan) {
-                            Text("Try again")
-                        }
-                    }
-
-                    else -> Unit
+                    else -> false
                 }
 
-                devices.forEach { device ->
-                    ElevatedCard(
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(Modifier.padding(16.dp)) {
-                            Text(device.name)
-                            Text(device.address)
-                            Text("RSSI: ${device.rssi} dBm")
-                            Button(onClick = { viewModel.connect(device.address) }) {
-                                Text("Connect")
+                if (showDevices) {
+                    Text(
+                        "Nearby devices",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+
+                    if (devices.isEmpty()) {
+                        Text("No devices found. Tap Scan to search.")
+                    }
+
+                    devices.forEach { device ->
+                        ElevatedCard(
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    device.name,
+                                    style = MaterialTheme.typography.titleMedium
+                                )
+
+                                Text("RSSI: ${device.rssi} dBm")
+
+                                Button(
+                                    onClick = {
+                                        viewModel.connect(device.address)
+                                    }
+                                ) {
+                                    Text("Connect")
+                                }
                             }
                         }
                     }
                 }
 
-                Text("Connection: $connectionState")
-
-                if (connectionState is ConnectionState.Connected) {
-                    Button(onClick = viewModel::disconnect) {
-                        Text("Disconnect")
+                when (connectionState) {
+                    ConnectionState.ConnectionLost -> {
+                        Text("Connection lost. Select a device to reconnect.")
                     }
-                }
 
-                if (connectionState is ConnectionState.Connected) {
-                    Text("Soil: ${readings.soil}")
-                    Text("Temperature: ${readings.temperature} °C")
-                    Text("Humidity: ${readings.humidity} %")
-                    Text("Pressure: ${readings.pressure} hPa")
+                    ConnectionState.Connecting -> {
+                        Text("Connecting...")
+                    }
+
+                    ConnectionState.Discovering -> {
+                        Text("Discovering services...")
+                    }
+
+                    ConnectionState.Connected -> {
+                        Text("Soil: ${readings.soil}")
+                        Text("Temperature: ${readings.temperature} °C")
+                        Text("Humidity: ${readings.humidity} %")
+                        Text("Pressure: ${readings.pressure} hPa")
+                    }
+
+                    is ConnectionState.Error -> {
+                        Text((connectionState as ConnectionState.Error).message)
+                    }
+
+                    ConnectionState.Disconnected -> Unit
                 }
             }
         }
