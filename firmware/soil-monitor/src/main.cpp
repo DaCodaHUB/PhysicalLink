@@ -15,6 +15,7 @@ constexpr uint8_t BME_ADDRESS = 0x76;
 #define TEMPERATURE_CHAR_UUID "5679"
 #define HUMIDITY_CHAR_UUID    "567A"
 #define PRESSURE_CHAR_UUID    "567B"
+#define CAPABILITIES_UUID     "5670"
 
 Adafruit_BME280 bme;
 
@@ -22,6 +23,8 @@ NimBLECharacteristic* soilCharacteristic;
 NimBLECharacteristic* temperatureCharacteristic;
 NimBLECharacteristic* humidityCharacteristic;
 NimBLECharacteristic* pressureCharacteristic;
+
+static constexpr char CAPABILITIES_JSON[] = R"json({"version":1,"device":"PhysicalLink Soil","capabilities":[{"id":"soil","uuid":"5678","unit":"raw","type":"number"},{"id":"temperature","uuid":"5679","unit":"C","type":"number"},{"id":"humidity","uuid":"567a","unit":"%","type":"number"},{"id":"pressure","uuid":"567b","unit":"hPa","type":"number"}]})json";
 
 class ServerCallbacks : public NimBLEServerCallbacks {
     void onDisconnect(
@@ -97,6 +100,23 @@ void setup() {
             NIMBLE_PROPERTY::READ |
             NIMBLE_PROPERTY::NOTIFY
         );
+
+    NimBLECharacteristic* capabilitiesCharacteristic =
+    service->createCharacteristic(
+        CAPABILITIES_UUID,
+        NIMBLE_PROPERTY::READ,
+        sizeof(CAPABILITIES_JSON)
+    );
+
+    capabilitiesCharacteristic->setValue(
+        CAPABILITIES_JSON
+    );
+
+    Serial.print("JSON length: ");
+    Serial.println(strlen(CAPABILITIES_JSON));
+
+    Serial.print("Stored value length: ");
+    Serial.println(capabilitiesCharacteristic->getValue().length());
 
     service->start();
 
