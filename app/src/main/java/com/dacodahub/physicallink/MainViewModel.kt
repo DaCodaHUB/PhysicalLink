@@ -32,6 +32,7 @@ class MainViewModel(application: Application) :
     val connectionState = connectionManager.connectionState
     val readings = connectionManager.readings
     val capabilities = connectionManager.capabilities
+    val sensorValues = connectionManager.sensorValues
 
     fun connect(address: String) {
         scanner.stopScan()

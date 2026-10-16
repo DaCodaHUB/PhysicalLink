@@ -30,7 +30,10 @@ class MainActivity : ComponentActivity() {
             val connectionState by viewModel.connectionState
                 .collectAsStateWithLifecycle()
 
-            val readings by viewModel.readings
+            val capabilities by viewModel.capabilities
+                .collectAsStateWithLifecycle()
+
+            val sensorValues by viewModel.sensorValues
                 .collectAsStateWithLifecycle()
 
             val permissions = if (Build.VERSION.SDK_INT >= 31) {
@@ -146,10 +149,16 @@ class MainActivity : ComponentActivity() {
                     }
 
                     ConnectionState.Connected -> {
-                        Text("Soil: ${readings.soil}")
-                        Text("Temperature: ${readings.temperature} °C")
-                        Text("Humidity: ${readings.humidity} %")
-                        Text("Pressure: ${readings.pressure} hPa")
+                        capabilities?.capabilities?.forEach { capability ->
+                            val value = sensorValues[capability.id] ?: "--"
+
+                            val unit = capability.unit
+                                .takeUnless { it.equals("raw", ignoreCase = true) }
+                                ?.let { " $it" }
+                                .orEmpty()
+
+                            Text("${capability.id}: $value$unit")
+                        }
                     }
 
                     is ConnectionState.Error -> {

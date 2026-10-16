@@ -57,6 +57,7 @@ class BleConnectionManager(private val context: Context) {
     private var activeCharacteristic: BluetoothGattCharacteristic? = null
     private var activeDescriptor: BluetoothGattDescriptor? = null
     private var startFailure: String? = null
+    private var discoveredSensorUuids: List<UUID> = emptyList()
 
     private val _connectionState = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
     val connectionState = _connectionState.asStateFlow()
@@ -64,6 +65,10 @@ class BleConnectionManager(private val context: Context) {
     val readings = _readings.asStateFlow()
     private val _capabilities = MutableStateFlow<DeviceCapabilities?>(null)
     val capabilities = _capabilities.asStateFlow()
+    private val _sensorValues =
+        MutableStateFlow<Map<String, String>>(emptyMap())
+
+    val sensorValues = _sensorValues.asStateFlow()
 
     private val operationQueue: GattOperationQueue = GattOperationQueue(
         execute = { operation ->
@@ -247,9 +252,7 @@ class BleConnectionManager(private val context: Context) {
                 // Android callbacks carry no request ID; never retry a timed-out
                 // request on the same GATT, where a late callback is ambiguous.
                 operationQueue.enqueue(
-                    listOf(GattOperation.ReadCharacteristic(CAPABILITIES_UUID)) +
-                            SENSOR_UUIDS.map { GattOperation.ReadCharacteristic(it) } +
-                            SENSOR_UUIDS.map { GattOperation.EnableNotifications(it) }
+                    listOf(GattOperation.ReadCharacteristic(CAPABILITIES_UUID))
                 )
             }
         }
@@ -308,9 +311,18 @@ class BleConnectionManager(private val context: Context) {
                         val parsed = DeviceCapabilitiesParser.parse(json)
                         _capabilities.value = parsed
 
-                        Log.d(
-                            "PhysicalLink",
-                            "Discovered ${parsed.capabilities.size} capabilities from ${parsed.device}"
+                        discoveredSensorUuids = parsed.capabilities.map { capability ->
+                            uuid(capability.uuid)
+                        }
+
+                        Log.d("PhysicalLink", "Discovered sensor UUIDs: $discoveredSensorUuids")
+
+                        operationQueue.enqueue(
+                            discoveredSensorUuids.map {
+                                GattOperation.ReadCharacteristic(it)
+                            } + discoveredSensorUuids.map {
+                                GattOperation.EnableNotifications(it)
+                            }
                         )
                     } catch (e: Exception) {
                         Log.e("PhysicalLink", "Invalid capability description", e)
@@ -350,6 +362,16 @@ class BleConnectionManager(private val context: Context) {
 
     private fun updateReading(uuid: UUID, value: ByteArray) {
         val text = value.toString(Charsets.UTF_8)
+
+        val capability = _capabilities.value
+            ?.capabilities
+            ?.find { uuid(it.uuid) == uuid }
+
+        if (capability != null) {
+            _sensorValues.value += (capability.id to text)
+        }
+        Log.d("PhysicalLink", "Dynamic readings: ${_sensorValues.value}")
+
         _readings.value = when (uuid) {
             SOIL_UUID -> _readings.value.copy(soil = text)
             TEMP_UUID -> _readings.value.copy(temperature = text)
