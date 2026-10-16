@@ -39,15 +39,19 @@ class BleConnectionManager(private val context: Context) {
         private val HUMIDITY_UUID = uuid("567a")
         private val PRESSURE_UUID = uuid("567b")
         private val CCCD_UUID = uuid("2902")
+        private val CAPABILITIES_UUID = uuid("5670")
         private val SENSOR_UUIDS = listOf(SOIL_UUID, TEMP_UUID, HUMIDITY_UUID, PRESSURE_UUID)
         private const val OPERATION_TIMEOUT_MS = 5_000L
         private const val CONNECTION_TIMEOUT_MS = 30_000L
+        private const val DISCONNECT_TIMEOUT_MS = 5_000L
     }
 
     private val bluetoothManager = context.getSystemService(BluetoothManager::class.java)
     private val handler = Handler(Looper.getMainLooper())
     // GATT, queue, timeout and StateFlow mutations are confined to the main looper.
     private var gatt: BluetoothGatt? = null
+    private var disconnectingGatt: BluetoothGatt? = null
+    private var disconnectTimeout: Runnable? = null
     private var linkConnected = false
     private var timeoutRunnable: Runnable? = null
     private var activeCharacteristic: BluetoothGattCharacteristic? = null
@@ -58,6 +62,8 @@ class BleConnectionManager(private val context: Context) {
     val connectionState = _connectionState.asStateFlow()
     private val _readings = MutableStateFlow(SensorReadings())
     val readings = _readings.asStateFlow()
+    private val _capabilities = MutableStateFlow<DeviceCapabilities?>(null)
+    val capabilities = _capabilities.asStateFlow()
 
     private val operationQueue: GattOperationQueue = GattOperationQueue(
         execute = { operation ->
@@ -178,8 +184,27 @@ class BleConnectionManager(private val context: Context) {
 
     private val callback = object : BluetoothGattCallback() {
         override fun onConnectionStateChange(callbackGatt: BluetoothGatt, status: Int, newState: Int) {
+            Log.d(
+                "PhysicalLink",
+                "GATT callback: status=$status, newState=$newState"
+            )
+
             handler.post {
-                if (callbackGatt !== gatt) return@post
+                if (callbackGatt === disconnectingGatt) {
+                    if (
+                        newState == BluetoothProfile.STATE_DISCONNECTED ||
+                        status != BluetoothGatt.GATT_SUCCESS
+                    ) {
+                        Log.d("PhysicalLink", "Graceful disconnect confirmed")
+                        finishDisconnect(callbackGatt)
+                    }
+                    return@post
+                }
+
+                if (callbackGatt !== gatt) {
+                    Log.d("PhysicalLink", "Ignoring callback from old GATT")
+                    return@post
+                }
                 if (status != BluetoothGatt.GATT_SUCCESS || newState == BluetoothProfile.STATE_DISCONNECTED) {
                     val state = if (linkConnected) ConnectionState.ConnectionLost
                     else if (status != BluetoothGatt.GATT_SUCCESS) ConnectionState.Error("Connection failed: $status")
@@ -222,8 +247,9 @@ class BleConnectionManager(private val context: Context) {
                 // Android callbacks carry no request ID; never retry a timed-out
                 // request on the same GATT, where a late callback is ambiguous.
                 operationQueue.enqueue(
-                    SENSOR_UUIDS.map { GattOperation.ReadCharacteristic(it) } +
-                        SENSOR_UUIDS.map { GattOperation.EnableNotifications(it) }
+                    listOf(GattOperation.ReadCharacteristic(CAPABILITIES_UUID)) +
+                            SENSOR_UUIDS.map { GattOperation.ReadCharacteristic(it) } +
+                            SENSOR_UUIDS.map { GattOperation.EnableNotifications(it) }
                 )
             }
         }
@@ -274,7 +300,30 @@ class BleConnectionManager(private val context: Context) {
             if (callbackGatt !== gatt || characteristic !== activeCharacteristic) return@post
             val operation = operationQueue.current as? GattOperation.ReadCharacteristic ?: return@post
             if (operation.characteristicUuid != characteristic.uuid) return@post
-            if (status == BluetoothGatt.GATT_SUCCESS) updateReading(characteristic.uuid, value)
+            if (status == BluetoothGatt.GATT_SUCCESS) {
+                if (characteristic.uuid == CAPABILITIES_UUID) {
+                    val json = value.toString(Charsets.UTF_8)
+
+                    try {
+                        val parsed = DeviceCapabilitiesParser.parse(json)
+                        _capabilities.value = parsed
+
+                        Log.d(
+                            "PhysicalLink",
+                            "Discovered ${parsed.capabilities.size} capabilities from ${parsed.device}"
+                        )
+                    } catch (e: Exception) {
+                        Log.e("PhysicalLink", "Invalid capability description", e)
+                        endSession(
+                            ConnectionState.Error("Invalid capability description")
+                        )
+                        return@post
+                    }
+                } else {
+                    updateReading(characteristic.uuid, value)
+                }
+            }
+
             completeOperation(operation, status)
         }
     }
@@ -316,9 +365,70 @@ class BleConnectionManager(private val context: Context) {
         }
     }
 
-    fun disconnect() = onMain { endSession(ConnectionState.Disconnected) }
+    fun disconnect() = onMain {
+        val oldGatt = gatt
+
+        if (oldGatt == null) {
+            endSession(ConnectionState.Disconnected)
+            return@onMain
+        }
+
+        cancelTimeout()
+        operationQueue.clear()
+        activeCharacteristic = null
+        activeDescriptor = null
+
+        gatt = null
+        linkConnected = false
+        disconnectingGatt = oldGatt
+
+        _readings.value = SensorReadings()
+        _capabilities.value = null
+        _connectionState.value = ConnectionState.Disconnected
+
+        try {
+            Log.d("PhysicalLink", "Requesting graceful GATT disconnect")
+            oldGatt.disconnect()
+
+            val fallback = Runnable {
+                if (disconnectingGatt === oldGatt) {
+                    Log.w("PhysicalLink", "Disconnect timed out; closing GATT")
+                    finishDisconnect(oldGatt)
+                }
+            }
+
+            disconnectTimeout = fallback
+            handler.postDelayed(fallback, DISCONNECT_TIMEOUT_MS)
+
+        } catch (e: SecurityException) {
+            Log.w("PhysicalLink", "Cannot disconnect", e)
+            finishDisconnect(oldGatt)
+        }
+    }
+
+    private fun finishDisconnect(oldGatt: BluetoothGatt) {
+        if (disconnectingGatt !== oldGatt) return
+
+        disconnectTimeout?.let(handler::removeCallbacks)
+        disconnectTimeout = null
+        disconnectingGatt = null
+
+        try {
+            oldGatt.close()
+        } catch (e: SecurityException) {
+            Log.w("PhysicalLink", "Cannot close GATT", e)
+        }
+
+        Log.d("PhysicalLink", "GATT cleanup completed")
+        val device = bluetoothManager.adapter.getRemoteDevice(oldGatt.device.address)
+
+        val devices = bluetoothManager.getConnectedDevices(
+            BluetoothProfile.GATT
+        )
+    }
 
     private fun endSession(state: ConnectionState) {
+        Log.d("PhysicalLink", "endSession called: $state")
         cancelTimeout()
         operationQueue.clear()
         activeCharacteristic = null
@@ -328,18 +438,16 @@ class BleConnectionManager(private val context: Context) {
         gatt = null // Invalidate before disconnect/close can deliver callbacks.
         if (oldGatt != null) {
             try {
+                Log.d("PhysicalLink", "Requesting GATT disconnect")
                 oldGatt.disconnect()
             } catch (e: SecurityException) {
-                Log.w("PhysicalLink", "Cannot disconnect after permission revocation", e)
-            } finally {
-                try {
-                    oldGatt.close()
-                } catch (e: SecurityException) {
-                    Log.w("PhysicalLink", "Cannot close after permission revocation", e)
-                }
+                Log.w("PhysicalLink", "Cannot disconnect", e)
+                oldGatt.close()
             }
         }
+
         _readings.value = SensorReadings()
+        _capabilities.value = null
         _connectionState.value = state
     }
 }

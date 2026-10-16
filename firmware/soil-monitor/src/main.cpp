@@ -23,16 +23,31 @@ NimBLECharacteristic* soilCharacteristic;
 NimBLECharacteristic* temperatureCharacteristic;
 NimBLECharacteristic* humidityCharacteristic;
 NimBLECharacteristic* pressureCharacteristic;
+NimBLEServer* server = nullptr;
 
 static constexpr char CAPABILITIES_JSON[] = R"json({"version":1,"device":"PhysicalLink Soil","capabilities":[{"id":"soil","uuid":"5678","unit":"raw","type":"number"},{"id":"temperature","uuid":"5679","unit":"C","type":"number"},{"id":"humidity","uuid":"567a","unit":"%","type":"number"},{"id":"pressure","uuid":"567b","unit":"hPa","type":"number"}]})json";
 
 class ServerCallbacks : public NimBLEServerCallbacks {
+    void onConnect(
+        NimBLEServer* server,
+        NimBLEConnInfo& connInfo
+    ) override {
+        Serial.printf(
+            "BLE connected, handle: %d\n",
+            connInfo.getConnHandle()
+        );
+    }
+
     void onDisconnect(
         NimBLEServer* server,
         NimBLEConnInfo& connInfo,
         int reason
     ) override {
-        Serial.println("BLE client disconnected");
+        Serial.printf(
+            "BLE disconnected, handle: %d, reason: %d\n",
+            connInfo.getConnHandle(),
+            reason
+        );
 
         NimBLEDevice::startAdvertising();
     }
@@ -67,7 +82,7 @@ void setup() {
 
     NimBLEDevice::init("PhysicalLink Soil");
 
-    NimBLEServer* server = NimBLEDevice::createServer();
+    server = NimBLEDevice::createServer();
     server->setCallbacks(&serverCallbacks);
 
     NimBLEService* service =
@@ -177,6 +192,18 @@ void loop() {
     // -------------------------
     // Serial debugging
     // -------------------------
+    static unsigned long lastDebug = 0;
+
+    if (millis() - lastDebug >= 5000) {
+        lastDebug = millis();
+
+        Serial.printf(
+            "BLE connected clients: %d\n",
+            server->getConnectedCount()
+        );
+
+        static bool disconnectRequested = false;
+    }
 
     Serial.println("--- PhysicalLink ---");
 
