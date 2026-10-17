@@ -1,4 +1,3 @@
-
 package com.dacodahub.physicallink
 
 import android.Manifest
@@ -9,13 +8,10 @@ import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
-import androidx.compose.foundation.layout.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.getValue
+import com.dacodahub.physicallink.ui.SensorDashboard
+import com.dacodahub.physicallink.ui.theme.PhysicalLinkTheme
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.dacodahub.physicallink.ble.ConnectionState
 
 class MainActivity : ComponentActivity() {
 
@@ -54,119 +50,27 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(24.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                Text(
-                    "PhysicalLink",
-                    style = MaterialTheme.typography.headlineMedium
-                )
-
-                Button(onClick = {
-                    val granted = permissions.all {
-                        checkSelfPermission(it) ==
+            PhysicalLinkTheme {
+                SensorDashboard(
+                    devices = devices,
+                    connectionState = connectionState,
+                    capabilities = capabilities,
+                    sensorValues = sensorValues,
+                    onScan = {
+                        val granted = permissions.all {
+                            checkSelfPermission(it) ==
                                 android.content.pm.PackageManager.PERMISSION_GRANTED
-                    }
-
-                    if (granted) {
-                        viewModel.startScan()
-                    } else {
-                        permissionLauncher.launch(permissions)
-                    }
-                }) {
-                    Text("Scan for devices")
-                }
-
-                OutlinedButton(onClick = viewModel::stopScan) {
-                    Text("Stop scan")
-                }
-
-                if (connectionState is ConnectionState.Connected) {
-                    Button(onClick = viewModel::disconnect) {
-                        Text("Disconnect")
-                    }
-                }
-
-                val showDevices = when (connectionState) {
-                    ConnectionState.Disconnected,
-                    ConnectionState.ConnectionLost,
-                    is ConnectionState.Error -> true
-
-                    else -> false
-                }
-
-                if (showDevices) {
-                    Text(
-                        "Nearby devices",
-                        style = MaterialTheme.typography.titleMedium
-                    )
-
-                    if (devices.isEmpty()) {
-                        Text("No devices found. Tap Scan to search.")
-                    }
-
-                    devices.forEach { device ->
-                        ElevatedCard(
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Column(
-                                modifier = Modifier.padding(16.dp),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Text(
-                                    device.name,
-                                    style = MaterialTheme.typography.titleMedium
-                                )
-
-                                Text("RSSI: ${device.rssi} dBm")
-
-                                Button(
-                                    onClick = {
-                                        viewModel.connect(device.address)
-                                    }
-                                ) {
-                                    Text("Connect")
-                                }
-                            }
                         }
-                    }
-                }
-
-                when (connectionState) {
-                    ConnectionState.ConnectionLost -> {
-                        Text("Connection lost. Select a device to reconnect.")
-                    }
-
-                    ConnectionState.Connecting -> {
-                        Text("Connecting...")
-                    }
-
-                    ConnectionState.Discovering -> {
-                        Text("Discovering services...")
-                    }
-
-                    ConnectionState.Connected -> {
-                        capabilities?.capabilities?.forEach { capability ->
-                            val value = sensorValues[capability.id] ?: "--"
-
-                            val unit = capability.unit
-                                .takeUnless { it.equals("raw", ignoreCase = true) }
-                                ?.let { " $it" }
-                                .orEmpty()
-
-                            Text("${capability.id}: $value$unit")
+                        if (granted) {
+                            viewModel.startScan()
+                        } else {
+                            permissionLauncher.launch(permissions)
                         }
-                    }
-
-                    is ConnectionState.Error -> {
-                        Text((connectionState as ConnectionState.Error).message)
-                    }
-
-                    ConnectionState.Disconnected -> Unit
-                }
+                    },
+                    onStopScan = viewModel::stopScan,
+                    onConnect = viewModel::connect,
+                    onDisconnect = viewModel::disconnect
+                )
             }
         }
     }
