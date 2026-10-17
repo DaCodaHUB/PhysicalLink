@@ -1,4 +1,4 @@
-package com.dacodahub.physicallink.ble
+package com.dacodahub.physicallink.data.ble
 
 import org.junit.Assert.*
 import org.junit.Test

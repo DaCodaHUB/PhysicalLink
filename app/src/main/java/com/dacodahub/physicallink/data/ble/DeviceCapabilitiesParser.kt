@@ -1,5 +1,7 @@
-package com.dacodahub.physicallink.ble
+package com.dacodahub.physicallink.data.ble
 
+import com.dacodahub.physicallink.domain.model.DeviceCapabilities
+import com.dacodahub.physicallink.domain.model.DeviceCapability
 import org.json.JSONObject
 
 object DeviceCapabilitiesParser {

@@ -1,6 +1,7 @@
 
-package com.dacodahub.physicallink.ble
+package com.dacodahub.physicallink.data.ble
 
+import com.dacodahub.physicallink.domain.model.*
 import java.util.UUID
 
 sealed interface GattOperation {

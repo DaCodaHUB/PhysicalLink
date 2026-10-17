@@ -1,5 +1,6 @@
-package com.dacodahub.physicallink.ble
+package com.dacodahub.physicallink.data.ble
 
+import com.dacodahub.physicallink.domain.model.*
 import java.util.ArrayDeque
 
 /** Single-flight queue. All calls must use the owner's execution context. */

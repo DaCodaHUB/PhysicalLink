@@ -1,4 +1,4 @@
-package com.dacodahub.physicallink.ui
+package com.dacodahub.physicallink.feature.dashboard
 
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -24,8 +24,8 @@ class SensorFormattingTest {
     @Test
     fun `units and dynamic identifiers are readable`() {
         assertEquals("", sensorUnit("RAW"))
-        assertEquals("°C", sensorUnit("C"))
-        assertEquals("°C", sensorUnit("celsius"))
+        assertEquals("\u00B0C", sensorUnit("C"))
+        assertEquals("\u00B0C", sensorUnit("celsius"))
         assertEquals("%", sensorUnit("%"))
         assertEquals("Soil moisture", sensorName("soil_moisture"))
         assertEquals("Air Temperature", sensorName("airTemperature"))

@@ -1,5 +1,6 @@
-package com.dacodahub.physicallink.ble
+package com.dacodahub.physicallink.data.ble
 
+import com.dacodahub.physicallink.domain.model.DiscoveredDevice
 import android.annotation.SuppressLint
 import android.bluetooth.BluetoothManager
 import android.bluetooth.le.ScanCallback
@@ -9,12 +10,6 @@ import android.content.Context
 import android.util.Log
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
-
-data class DiscoveredDevice(
-    val name: String,
-    val address: String,
-    val rssi: Int
-)
 
 @SuppressLint("MissingPermission")
 class BleScanner(context: Context) {

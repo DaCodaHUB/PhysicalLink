@@ -1,4 +1,4 @@
-package com.dacodahub.physicallink.ui.theme
+package com.dacodahub.physicallink.core.designsystem.theme
 
 import androidx.compose.ui.graphics.Color
 

@@ -1,6 +1,5 @@
-package com.dacodahub.physicallink.ui
+package com.dacodahub.physicallink.feature.dashboard
 
-import java.math.BigDecimal
 import java.math.RoundingMode
 import java.util.Locale
 
@@ -13,7 +12,7 @@ internal fun sensorName(id: String): String = id
 
 internal fun sensorUnit(unit: String): String = when (unit.trim().lowercase(Locale.ROOT)) {
     "raw" -> ""
-    "c", "°c", "celsius" -> "°C"
+    "c", "\u00B0c", "celsius" -> "\u00B0C"
     else -> unit.trim()
 }
 
@@ -28,4 +27,3 @@ internal fun formatSensorValue(value: String?, type: String): String {
         rounded.toPlainString()
     }
 }
-

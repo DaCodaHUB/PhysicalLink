@@ -1,5 +1,7 @@
-package com.dacodahub.physicallink.ble
+package com.dacodahub.physicallink.data.ble
 
+import com.dacodahub.physicallink.domain.model.ConnectionState
+import com.dacodahub.physicallink.domain.model.DeviceCapabilities
 import android.annotation.SuppressLint
 import android.bluetooth.*
 import android.content.Context
@@ -17,15 +19,6 @@ data class SensorReadings(
     val humidity: String = "--",
     val pressure: String = "--"
 )
-
-sealed interface ConnectionState {
-    data object Disconnected : ConnectionState
-    data object Connecting : ConnectionState
-    data object Discovering : ConnectionState
-    data object Connected : ConnectionState
-    data object ConnectionLost : ConnectionState
-    data class Error(val message: String) : ConnectionState
-}
 
 @SuppressLint("MissingPermission")
 class BleConnectionManager(private val context: Context) {

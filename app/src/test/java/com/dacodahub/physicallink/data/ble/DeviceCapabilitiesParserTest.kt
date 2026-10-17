@@ -1,5 +1,5 @@
 
-package com.dacodahub.physicallink.ble
+package com.dacodahub.physicallink.data.ble
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
