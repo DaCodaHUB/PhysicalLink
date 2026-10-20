@@ -9,7 +9,7 @@ object DeviceCapabilitiesParser {
     fun parse(json: String): DeviceCapabilities {
         val root = JSONObject(json)
 
-        val version = root.getInt("version")
+        val version = root.get("version")
         require(version == 1) {
             "Unsupported capability protocol version: $version"
         }
@@ -22,19 +22,29 @@ object DeviceCapabilitiesParser {
 
                 add(
                     DeviceCapability(
-                        id = item.getString("id"),
-                        uuid = item.getString("uuid"),
-                        unit = item.getString("unit"),
-                        type = item.getString("type")
+                        id = item.string("id"),
+                        uuid = item.string("uuid"),
+                        unit = item.string("unit"),
+                        type = item.string("type")
                     )
                 )
             }
         }
 
+        require(capabilities.all { it.id.isNotBlank() && it.type.isNotBlank() }) { "Blank sensor ID or type" }
+        require(capabilities.distinctBy { it.id }.size == capabilities.size) { "Duplicate sensor IDs" }
+        val uuids = capabilities.map { capabilityUuid(it.uuid) }
+        require(uuids.distinct().size == uuids.size) { "Duplicate sensor UUIDs" }
+        require(capabilityUuid("5670") !in uuids) { "Capabilities characteristic cannot be a sensor" }
+
         return DeviceCapabilities(
-            version = root.getInt("version"),
-            device = root.getString("device"),
+            version = 1,
+            device = root.string("device"),
             capabilities = capabilities
         )
+    }
+    private fun JSONObject.string(key: String): String = get(key).let {
+        require(it is String) { "$key must be a string" }
+        it
     }
 }

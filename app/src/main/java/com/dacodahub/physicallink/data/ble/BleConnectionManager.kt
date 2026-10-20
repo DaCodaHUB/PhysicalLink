@@ -2,6 +2,9 @@ package com.dacodahub.physicallink.data.ble
 
 import com.dacodahub.physicallink.domain.model.ConnectionState
 import com.dacodahub.physicallink.domain.model.DeviceCapabilities
+import com.dacodahub.physicallink.domain.model.DeviceCapability
+import android.Manifest
+import android.content.pm.PackageManager
 import android.annotation.SuppressLint
 import android.bluetooth.*
 import android.content.Context
@@ -33,13 +36,12 @@ class BleConnectionManager(private val context: Context) {
         private val PRESSURE_UUID = uuid("567b")
         private val CCCD_UUID = uuid("2902")
         private val CAPABILITIES_UUID = uuid("5670")
-        private val SENSOR_UUIDS = listOf(SOIL_UUID, TEMP_UUID, HUMIDITY_UUID, PRESSURE_UUID)
         private const val OPERATION_TIMEOUT_MS = 5_000L
         private const val CONNECTION_TIMEOUT_MS = 30_000L
         private const val DISCONNECT_TIMEOUT_MS = 5_000L
     }
 
-    private val bluetoothManager = context.getSystemService(BluetoothManager::class.java)
+    private val bluetoothManager: BluetoothManager? = context.getSystemService(BluetoothManager::class.java)
     private val handler = Handler(Looper.getMainLooper())
     // GATT, queue, timeout and StateFlow mutations are confined to the main looper.
     private var gatt: BluetoothGatt? = null
@@ -50,7 +52,9 @@ class BleConnectionManager(private val context: Context) {
     private var activeCharacteristic: BluetoothGattCharacteristic? = null
     private var activeDescriptor: BluetoothGattDescriptor? = null
     private var startFailure: String? = null
-    private var discoveredSensorUuids: List<UUID> = emptyList()
+    private var sensorCapabilitiesByUuid = emptyMap<UUID, DeviceCapability>()
+    private val _deviceId = MutableStateFlow<String?>(null)
+    val deviceId = _deviceId.asStateFlow()
 
     private val _connectionState = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
     val connectionState = _connectionState.asStateFlow()
@@ -71,7 +75,7 @@ class BleConnectionManager(private val context: Context) {
                 checkNotNull(activeGatt) { "No active GATT connection" }
                 executeOperation(activeGatt, operation)
             } catch (e: SecurityException) {
-                startFailure = "Bluetooth permission denied"
+                startFailure = "Bluetooth permission denied. Allow Nearby devices in app settings, then reconnect."
                 false
             } catch (e: IllegalStateException) {
                 startFailure = e.message
@@ -87,9 +91,9 @@ class BleConnectionManager(private val context: Context) {
             started
         },
         onFailure = { operation, reason ->
-            val message = "$operation: ${startFailure ?: reason}"
-            Log.e("PhysicalLink", message)
-            endSession(ConnectionState.Error(message))
+            val detail = startFailure ?: reason
+            Log.e("PhysicalLink", "$operation: $detail")
+            endSession(ConnectionState.Error("Sensor setup failed: $detail. Check device power and Bluetooth, then reconnect."))
         }
     )
 
@@ -128,6 +132,8 @@ class BleConnectionManager(private val context: Context) {
         return when (operation) {
             is GattOperation.ReadCharacteristic -> activeGatt.readCharacteristic(characteristic)
             is GattOperation.EnableNotifications -> {
+                val enableValue = if (characteristic.properties and BluetoothGattCharacteristic.PROPERTY_NOTIFY != 0)
+                    BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE else BluetoothGattDescriptor.ENABLE_INDICATION_VALUE
                 val descriptor = checkNotNull(characteristic.getDescriptor(CCCD_UUID)) {
                     "Notification descriptor missing for $characteristicUuid"
                 }
@@ -135,11 +141,11 @@ class BleConnectionManager(private val context: Context) {
                 if (!activeGatt.setCharacteristicNotification(characteristic, true)) return false
                 if (Build.VERSION.SDK_INT >= 33) {
                     activeGatt.writeDescriptor(
-                        descriptor, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+                        descriptor, enableValue
                     ) == BluetoothStatusCodes.SUCCESS
                 } else {
                     @Suppress("DEPRECATION")
-                    descriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+                    descriptor.value = enableValue
                     @Suppress("DEPRECATION")
                     activeGatt.writeDescriptor(descriptor)
                 }
@@ -148,11 +154,13 @@ class BleConnectionManager(private val context: Context) {
     }
 
     fun connect(address: String) = onMain {
+        if (gatt != null && _deviceId.value == address) return@onMain
         endSession(ConnectionState.Disconnected)
+        _deviceId.value = address
         _connectionState.value = ConnectionState.Connecting
         try {
-            val adapter = checkNotNull(bluetoothManager.adapter) { "Bluetooth unavailable" }
-            check(adapter.isEnabled) { "Bluetooth is disabled" }
+            val adapter = checkNotNull(bluetoothManager?.adapter) { "Bluetooth unavailable" }
+            check(adapter.isEnabled) { "Bluetooth is disabled. Turn it on, then reconnect." }
             // Always post callbacks, even when delivered on main, so assignment
             // completes before a connection callback examines the session.
             val device = adapter.getRemoteDevice(address)
@@ -169,10 +177,10 @@ class BleConnectionManager(private val context: Context) {
             }
             val activeGatt = checkNotNull(gatt) { "Could not create GATT connection" }
             scheduleTimeout(CONNECTION_TIMEOUT_MS) {
-                if (gatt === activeGatt) endSession(ConnectionState.Error("Connection timed out"))
+                if (gatt === activeGatt) endSession(ConnectionState.Error("Connection timed out. Move the device closer and try again."))
             }
         } catch (e: SecurityException) {
-            endSession(ConnectionState.Error("Bluetooth permission denied"))
+            endSession(ConnectionState.Error("Bluetooth permission denied. Allow Nearby devices in app settings, then reconnect."))
         } catch (e: IllegalArgumentException) {
             endSession(ConnectionState.Error("Invalid Bluetooth address"))
         } catch (e: IllegalStateException) {
@@ -205,7 +213,7 @@ class BleConnectionManager(private val context: Context) {
                 }
                 if (status != BluetoothGatt.GATT_SUCCESS || newState == BluetoothProfile.STATE_DISCONNECTED) {
                     val state = if (linkConnected) ConnectionState.ConnectionLost
-                    else if (status != BluetoothGatt.GATT_SUCCESS) ConnectionState.Error("Connection failed: $status")
+                    else if (status != BluetoothGatt.GATT_SUCCESS) ConnectionState.Error("Connection failed (code $status). Check device power, move closer, then reconnect.")
                     else ConnectionState.Disconnected
                     endSession(state)
                 } else if (newState == BluetoothProfile.STATE_CONNECTED && !linkConnected) {
@@ -222,7 +230,7 @@ class BleConnectionManager(private val context: Context) {
                             }
                         }
                     } catch (e: SecurityException) {
-                        endSession(ConnectionState.Error("Bluetooth permission denied"))
+                        endSession(ConnectionState.Error("Bluetooth permission denied. Allow Nearby devices in app settings, then reconnect."))
                     }
                 }
             }
@@ -302,25 +310,33 @@ class BleConnectionManager(private val context: Context) {
 
                     try {
                         val parsed = DeviceCapabilitiesParser.parse(json)
-                        _capabilities.value = parsed
-
-                        discoveredSensorUuids = parsed.capabilities.map { capability ->
-                            uuid(capability.uuid)
-                        }
-
-                        Log.d("PhysicalLink", "Discovered sensor UUIDs: $discoveredSensorUuids")
-
-                        operationQueue.enqueue(
-                            discoveredSensorUuids.map {
-                                GattOperation.ReadCharacteristic(it)
-                            } + discoveredSensorUuids.map {
-                                GattOperation.EnableNotifications(it)
+                        val sensors = parsed.capabilities.associateBy { capabilityUuid(it.uuid) }
+                        val service = checkNotNull(callbackGatt.getService(SERVICE_UUID)) { "PhysicalLink service not found" }
+                        val operations = sensors.keys.flatMap { sensorUuid ->
+                            val sensor = checkNotNull(service.getCharacteristic(sensorUuid)) {
+                                "Sensor characteristic $sensorUuid not found"
                             }
-                        )
+                            val properties = sensor.properties
+                            val readable = properties and BluetoothGattCharacteristic.PROPERTY_READ != 0
+                            val notifiable = properties and (BluetoothGattCharacteristic.PROPERTY_NOTIFY or
+                                BluetoothGattCharacteristic.PROPERTY_INDICATE) != 0
+                            check(readable || notifiable) { "Sensor characteristic $sensorUuid cannot be read or subscribed" }
+                            buildList {
+                                if (readable) add(GattOperation.ReadCharacteristic(sensorUuid))
+                                if (notifiable) {
+                                    checkNotNull(sensor.getDescriptor(CCCD_UUID)) { "Notification descriptor missing for $sensorUuid" }
+                                    add(GattOperation.EnableNotifications(sensorUuid))
+                                }
+                            }
+                        }
+                        // Validate all metadata and GATT targets before publishing to dashboard persistence.
+                        sensorCapabilitiesByUuid = sensors
+                        _capabilities.value = parsed
+                        operationQueue.enqueue(operations)
                     } catch (e: Exception) {
                         Log.e("PhysicalLink", "Invalid capability description", e)
                         endSession(
-                            ConnectionState.Error("Invalid capability description")
+                            ConnectionState.Error("Invalid capability description: ${e.message ?: "unsupported metadata"}. Check device firmware and reconnect.")
                         )
                         return@post
                     }
@@ -356,14 +372,11 @@ class BleConnectionManager(private val context: Context) {
     private fun updateReading(uuid: UUID, value: ByteArray) {
         val text = value.toString(Charsets.UTF_8)
 
-        val capability = _capabilities.value
-            ?.capabilities
-            ?.find { uuid(it.uuid) == uuid }
+        val capability = sensorCapabilitiesByUuid[uuid]
 
         if (capability != null) {
             _sensorValues.value += (capability.id to text)
         }
-        Log.d("PhysicalLink", "Dynamic readings: ${_sensorValues.value}")
 
         _readings.value = when (uuid) {
             SOIL_UUID -> _readings.value.copy(soil = text)
@@ -384,6 +397,7 @@ class BleConnectionManager(private val context: Context) {
         val oldGatt = gatt
 
         if (oldGatt == null) {
+            if (disconnectingGatt != null) return@onMain // Repeated taps must not shorten graceful teardown.
             endSession(ConnectionState.Disconnected)
             return@onMain
         }
@@ -398,6 +412,8 @@ class BleConnectionManager(private val context: Context) {
         disconnectingGatt = oldGatt
 
         _readings.value = SensorReadings()
+        _sensorValues.value = emptyMap()
+        sensorCapabilitiesByUuid = emptyMap()
         _capabilities.value = null
         _connectionState.value = ConnectionState.Disconnected
 
@@ -415,7 +431,7 @@ class BleConnectionManager(private val context: Context) {
             disconnectTimeout = fallback
             handler.postDelayed(fallback, DISCONNECT_TIMEOUT_MS)
 
-        } catch (e: SecurityException) {
+        } catch (e: RuntimeException) {
             Log.w("PhysicalLink", "Cannot disconnect", e)
             finishDisconnect(oldGatt)
         }
@@ -428,18 +444,28 @@ class BleConnectionManager(private val context: Context) {
         disconnectTimeout = null
         disconnectingGatt = null
 
+        closeGatt(oldGatt)
+    }
+
+    private fun closeGatt(client: BluetoothGatt) {
+        try { client.close() }
+        catch (error: RuntimeException) { Log.w("PhysicalLink", "Cannot close GATT", error) }
+    }
+
+    /** Recheck on adapter broadcasts and foreground entry; no automatic reconnection. */
+    fun refreshEnvironment() = onMain {
+        if (gatt == null && disconnectingGatt == null) return@onMain
         try {
-            oldGatt.close()
-        } catch (e: SecurityException) {
-            Log.w("PhysicalLink", "Cannot close GATT", e)
+            if (Build.VERSION.SDK_INT >= 31 &&
+                context.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
+                throw SecurityException("Bluetooth permission revoked")
+            }
+            if (bluetoothManager?.adapter?.isEnabled != true) {
+                endSession(ConnectionState.Error("Bluetooth is disabled or unavailable. Turn it on, then reconnect."))
+            }
+        } catch (_: SecurityException) {
+            endSession(ConnectionState.Error("Bluetooth permission denied. Allow Nearby devices in app settings, then reconnect."))
         }
-
-        Log.d("PhysicalLink", "GATT cleanup completed")
-        val device = bluetoothManager.adapter.getRemoteDevice(oldGatt.device.address)
-
-        val devices = bluetoothManager.getConnectedDevices(
-            BluetoothProfile.GATT
-        )
     }
 
     private fun endSession(state: ConnectionState) {
@@ -451,17 +477,16 @@ class BleConnectionManager(private val context: Context) {
         linkConnected = false
         val oldGatt = gatt
         gatt = null // Invalidate before disconnect/close can deliver callbacks.
+        disconnectingGatt?.let(::finishDisconnect)
         if (oldGatt != null) {
-            try {
-                Log.d("PhysicalLink", "Requesting GATT disconnect")
-                oldGatt.disconnect()
-            } catch (e: SecurityException) {
-                Log.w("PhysicalLink", "Cannot disconnect", e)
-                oldGatt.close()
-            }
+            try { oldGatt.disconnect() }
+            catch (error: RuntimeException) { Log.w("PhysicalLink", "Cannot disconnect GATT", error) }
+            finally { closeGatt(oldGatt) }
         }
 
         _readings.value = SensorReadings()
+        _sensorValues.value = emptyMap()
+        sensorCapabilitiesByUuid = emptyMap()
         _capabilities.value = null
         _connectionState.value = state
     }

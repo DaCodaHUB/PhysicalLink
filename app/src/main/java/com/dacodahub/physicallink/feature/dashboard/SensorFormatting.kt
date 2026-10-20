@@ -20,7 +20,10 @@ internal fun formatSensorValue(value: String?, type: String): String {
     val text = value?.trim()?.takeIf { it.isNotEmpty() } ?: return "--"
     if (!type.equals("number", ignoreCase = true)) return text
     val number = text.toBigDecimalOrNull() ?: return text
-    val rounded = number.setScale(2, RoundingMode.HALF_UP)
+    // Bound BigDecimal expansion before rounding or toPlainString can allocate enormous output.
+    if (number.precision() > 64 || number.scale().toLong() !in -64L..64L) return text
+    val rounded = try { number.setScale(2, RoundingMode.HALF_UP) }
+        catch (_: ArithmeticException) { return text }
     return if (rounded.stripTrailingZeros().scale() <= 0) {
         rounded.setScale(0).toPlainString()
     } else {

@@ -7,6 +7,9 @@ import javax.inject.Inject
 
 @HiltViewModel
 class DevicesViewModel @Inject constructor(private val repository: DeviceRepository) : ViewModel() {
+    val deviceId = repository.connectedDeviceId
+    val capabilities = repository.capabilities
+    val scanState = repository.scanState
     val devices = repository.devices
     val connectionState = repository.connectionState
 

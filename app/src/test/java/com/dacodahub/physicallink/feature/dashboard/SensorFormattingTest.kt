@@ -31,5 +31,12 @@ class SensorFormattingTest {
         assertEquals("Air Temperature", sensorName("airTemperature"))
         assertEquals("Light level", sensorName("light-level"))
     }
+    @Test fun `extreme exponents remain bounded text without BigDecimal expansion`() {
+        for (value in listOf("1e2147483647", "1e-2147483647", "9e1000000", "1e-1000000")) {
+            assertEquals(value, formatSensorValue(value, "number"))
+        }
+        assertEquals("opaque reading", formatSensorValue("opaque reading", "future-type"))
+    }
+
 }
 
