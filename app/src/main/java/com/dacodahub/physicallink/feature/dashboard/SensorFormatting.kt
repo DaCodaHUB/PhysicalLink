@@ -16,13 +16,13 @@ internal fun sensorUnit(unit: String): String = when (unit.trim().lowercase(Loca
     else -> unit.trim()
 }
 
-internal fun formatSensorValue(value: String?, type: String): String {
+internal fun formatSensorValue(value: String?, type: String, precision: Int = 2): String {
     val text = value?.trim()?.takeIf { it.isNotEmpty() } ?: return "--"
     if (!type.equals("number", ignoreCase = true)) return text
     val number = text.toBigDecimalOrNull() ?: return text
     // Bound BigDecimal expansion before rounding or toPlainString can allocate enormous output.
     if (number.precision() > 64 || number.scale().toLong() !in -64L..64L) return text
-    val rounded = try { number.setScale(2, RoundingMode.HALF_UP) }
+    val rounded = try { number.setScale(precision.coerceIn(0, 6), RoundingMode.HALF_UP) }
         catch (_: ArithmeticException) { return text }
     return if (rounded.stripTrailingZeros().scale() <= 0) {
         rounded.setScale(0).toPlainString()

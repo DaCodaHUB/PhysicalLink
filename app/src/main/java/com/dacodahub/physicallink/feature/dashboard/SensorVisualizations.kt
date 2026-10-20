@@ -1,0 +1,126 @@
+package com.dacodahub.physicallink.feature.dashboard
+
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.semantics.*
+import androidx.compose.ui.unit.dp
+import java.util.Locale
+import com.dacodahub.physicallink.domain.model.*
+
+private fun number(value: Double, precision: Int) = formatSensorValue(value.toString(), "number", precision)
+
+@Composable
+internal fun ChartWidget(state: DashboardWidgetState, controls: WidgetControls? = null) {
+    val settings = state.widget.settings
+    val samples = state.timeline?.samples.orEmpty()
+    val series = remember(samples, state.nowMs, settings.chartWindowSeconds, settings.staleAfterSeconds) {
+        chartSeries(samples, state.nowMs, settings.chartWindowSeconds, settings.staleAfterSeconds * 1000L)
+    }
+    val axisPrecision = series?.let { number(it.minimum, settings.precision) != number(it.maximum, settings.precision) } == true
+    fun axisLabel(value: Double) = if (axisPrecision) number(value, settings.precision) else String.format(Locale.getDefault(), "%.3g", value)
+    val unit = sensorUnit(state.capability?.unit.orEmpty())
+    val ink = MaterialTheme.colorScheme.primary
+    val grid = MaterialTheme.colorScheme.outlineVariant
+    WidgetContainer(sensorName(state.widget.source.capabilityId), status = freshnessLabel(state), controls = controls) {
+        if (state.capability?.type?.equals("number", true) != true) Text("A numeric sensor is required for a chart.")
+        else if (series == null) Text("Waiting for numeric samples in this time window.")
+        else {
+            Text("${axisLabel(series.maximum)} $unit", style = MaterialTheme.typography.labelSmall)
+            Canvas(Modifier.fillMaxWidth().height(140.dp).semantics {
+                contentDescription = "Line chart, ${series.count} samples in the last ${settings.chartWindowSeconds} seconds. Value axis ${axisLabel(series.minimum)} to ${axisLabel(series.maximum)} $unit. Gaps indicate missing updates."
+            }) {
+                repeat(3) { index ->
+                    val y = size.height * index / 2f
+                    drawLine(grid, Offset(0f, y), Offset(size.width, y), 1.dp.toPx())
+                }
+                val from = state.nowMs - settings.chartWindowSeconds * 1000L
+                series.segments.forEach { segment ->
+                    val points = segment.map { sample ->
+                        Offset(((sample.timeMs - from).toDouble() / (settings.chartWindowSeconds * 1000L)).toFloat().coerceIn(0f, 1f) * size.width,
+                            (1f - axisFraction(sample.value, series.minimum, series.maximum)) * size.height)
+                    }
+                    if (points.size == 1) drawCircle(ink, 3.dp.toPx(), points.first())
+                    else if (points.isNotEmpty()) {
+                        val path = Path().apply { moveTo(points.first().x, points.first().y); points.drop(1).forEach { lineTo(it.x, it.y) } }
+                        drawPath(path, ink, style = Stroke(2.dp.toPx(), cap = StrokeCap.Round))
+                    }
+                }
+            }
+            Text("${axisLabel(series.minimum)} $unit", style = MaterialTheme.typography.labelSmall)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("-${settings.chartWindowSeconds}s", style = MaterialTheme.typography.labelSmall)
+                Text("Now", style = MaterialTheme.typography.labelSmall)
+            }
+        }
+        Text("Receive time - ${settings.chartWindowSeconds / 60} min window", style = MaterialTheme.typography.labelSmall)
+    }
+}
+
+@Composable
+internal fun BoundedWidget(state: DashboardWidgetState, controls: WidgetControls? = null) {
+    val settings = state.widget.settings
+    val value = state.timeline?.takeIf { it.latestValid }?.latestNumeric
+    val range = rangeReading(value, settings)
+    val unit = sensorUnit(state.capability?.unit.orEmpty())
+    val ink = MaterialTheme.colorScheme.primary
+    val track = MaterialTheme.colorScheme.surfaceVariant
+    val error = MaterialTheme.colorScheme.error
+    val title = sensorName(state.widget.source.capabilityId)
+    WidgetContainer(title, status = freshnessLabel(state), controls = controls) {
+        when {
+            state.capability?.type?.equals("number", true) != true -> Text("A numeric sensor is required for this visualization.")
+            !settings.hasRange -> Text("Set minimum and maximum in widget settings.")
+            range == null -> Text("Waiting for a valid numeric reading.")
+            else -> {
+                Text("${number(value!!, settings.precision)} $unit", style = MaterialTheme.typography.headlineMedium)
+                val outside = range.status != BoundStatus.INSIDE
+                val description = when (range.status) {
+                    BoundStatus.BELOW -> "Below configured minimum"
+                    BoundStatus.ABOVE -> "Above configured maximum"
+                    BoundStatus.INSIDE -> when {
+                        settings.lowerThreshold != null && value < settings.lowerThreshold -> "Below lower threshold"
+                        settings.upperThreshold != null && value > settings.upperThreshold -> "Above upper threshold"
+                        else -> "Within configured bounds"
+                    }
+                }
+                Canvas(Modifier.fillMaxWidth().height(if (state.widget.type == WidgetType.GAUGE) 96.dp else 32.dp)
+                    .semantics { contentDescription = description }) {
+                    val color = if (outside) error else ink
+                    if (state.widget.type == WidgetType.GAUGE) {
+                        val width = minOf(size.width - 12.dp.toPx(), (size.height - 8.dp.toPx()) * 2).coerceAtLeast(1f)
+                        val origin = Offset((size.width - width) / 2, 6.dp.toPx())
+                        val arcSize = Size(width, width)
+                        drawArc(track, 180f, 180f, false, origin, arcSize, style = Stroke(10.dp.toPx(), cap = StrokeCap.Round))
+                        if (range.fraction > 0) drawArc(color, 180f, 180 * range.fraction, false, origin, arcSize,
+                            style = Stroke(10.dp.toPx(), cap = StrokeCap.Round))
+                    } else {
+                        val left = 4.dp.toPx(); val right = size.width - left; val y = size.height / 2
+                        drawLine(track, Offset(left, y), Offset(right, y), 8.dp.toPx(), StrokeCap.Round)
+                        drawLine(color, Offset(left, y), Offset(left + (right - left) * range.fraction, y), 8.dp.toPx(), StrokeCap.Round)
+                        listOfNotNull(settings.lowerThreshold, settings.upperThreshold).forEach { threshold ->
+                            val x = left + (right - left) * axisFraction(threshold, settings.minimum!!, settings.maximum!!)
+                            drawLine(error, Offset(x, y - 10.dp.toPx()), Offset(x, y + 10.dp.toPx()), 2.dp.toPx())
+                        }
+                        drawCircle(color, 6.dp.toPx(), Offset(left + (right - left) * range.fraction, y))
+                    }
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text(number(settings.minimum!!, settings.precision), style = MaterialTheme.typography.labelSmall)
+                    Text(number(settings.maximum!!, settings.precision), style = MaterialTheme.typography.labelSmall)
+                }
+                Text(description, style = MaterialTheme.typography.bodySmall, color = if (outside) error else MaterialTheme.colorScheme.onSurfaceVariant)
+                if (settings.lowerThreshold != null || settings.upperThreshold != null)
+                    Text("Thresholds: ${settings.lowerThreshold?.let { number(it, settings.precision) } ?: "--"} / ${settings.upperThreshold?.let { number(it, settings.precision) } ?: "--"} $unit",
+                        style = MaterialTheme.typography.labelSmall)
+            }
+        }
+    }
+}

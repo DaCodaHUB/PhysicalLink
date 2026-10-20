@@ -33,7 +33,7 @@ class DashboardPersistenceViewModelTest {
         File(temporary.root, "$name.preferences_pb")
     }, worker)
     private fun vm(devices: Devices, layouts: DashboardLayoutRepository, key: String = "vm") =
-        DashboardViewModel(devices, layouts).also { viewModels.put(key, it) }
+        DashboardViewModel(devices, layouts, androidx.lifecycle.SavedStateHandle()).also { viewModels.put(key, it) }
     private suspend fun DashboardViewModel.awaitState(predicate: (DashboardState) -> Boolean): DashboardState =
         withTimeout(5000) { dashboard.first(predicate) }
 
@@ -72,7 +72,8 @@ class DashboardPersistenceViewModelTest {
         val id = first.awaitState { !it.loadingLayout && it.widgets.size == 1 }.widgets.single().widget.id
         first.setEditing(true)
         repeat(5) { first.toggleWidth(id) }
-        first.addWidget(SensorSource("A", "temperature"))
+        first.configureWidget(id, WidgetType.RANGE, WidgetSettings(300, -10.0, 60.0, 0.0, 40.0, 3, 30))
+        first.duplicateWidget(id)
         devices.sensorValues.value = mapOf("temperature" to "33")
         assertEquals("33", first.awaitState { it.isEditing && it.widgets.singleOrNull()?.value == "33" }.widgets.single().value)
         // Clear the originating VM while its application-owned writes are blocked.
@@ -88,6 +89,9 @@ class DashboardPersistenceViewModelTest {
         val restored = second.awaitState { !it.loadingLayout && it.widgets.size == 2 && it.widgets.first().widget.source.deviceId == "A" }
         assertEquals(id, restored.widgets.first().widget.id)
         assertEquals(2, restored.widgets.first().widget.columnSpan)
+        assertTrue(restored.widgets.all { it.widget.type == WidgetType.RANGE && it.widget.settings.precision == 3 })
+        assertEquals(restored.widgets[0].widget.settings, restored.widgets[1].widget.settings)
+        assertNotEquals(restored.widgets[0].widget.id, restored.widgets[1].widget.id)
     }
 
     @Test fun `capability changes persist additions preserve missing widgets and reset removes customization`() = runBlocking {
@@ -154,12 +158,38 @@ class DashboardPersistenceViewModelTest {
         val restored = reopened.awaitState { it.widgets.size == 2 && it.widgets.all { widget -> widget.value == "21" } }
         assertEquals(saved!!.widgets, restored.widgets.map { it.widget })
     }
+    @Test fun `new samples between freshness ticks remain live and visible in chart time`() = runBlocking {
+        val devices = Devices(metadata("temperature"))
+        val storage = repository("freshness")
+        val dashboard = vm(devices, storage)
+        dashboard.awaitState { !it.loadingLayout && it.widgets.size == 1 }
+        val source = SensorSource("A", "temperature")
+        fun publish(time: Long) {
+            devices.now = time
+            devices.sensorHistory.value = SensorHistorySnapshot("A", 1, true,
+                mapOf(source to SensorTimeline(listOf(NumericSample(time, 12.0, 0)), time, 12.0, true)))
+            devices.sensorValues.value = mapOf("temperature" to "12")
+        }
+        publish(1000)
+        assertEquals(ReadingFreshness.LIVE, dashboard.awaitState {
+            it.widgets.singleOrNull()?.timeline?.lastSuccessfulMs == 1000L
+        }.widgets.single().freshness)
+        publish(1250) // Same numeric value; a new history event before the next UI tick.
+        val reading = dashboard.awaitState { it.widgets.singleOrNull()?.timeline?.lastSuccessfulMs == 1250L }.widgets.single()
+        assertEquals(ReadingFreshness.LIVE, reading.freshness)
+        assertTrue(reading.nowMs >= 1250)
+        assertEquals(1, chartSeries(reading.timeline!!.samples, reading.nowMs, 60, 15000)!!.count)
+    }
+
     private class Devices(metadata: DeviceCapabilities) : DeviceRepository {
+        var now = 0L
+        override fun monotonicNowMs() = now
         override val connectedDeviceId = MutableStateFlow<String?>("A")
         override val scanState = MutableStateFlow<com.dacodahub.physicallink.domain.model.ScanState>(com.dacodahub.physicallink.domain.model.ScanState.Idle)
         override val devices = MutableStateFlow<List<DiscoveredDevice>>(emptyList())
         override val connectionState = MutableStateFlow<ConnectionState>(ConnectionState.Connected)
         override val capabilities = MutableStateFlow<DeviceCapabilities?>(metadata)
+        override val sensorHistory = MutableStateFlow(com.dacodahub.physicallink.domain.model.SensorHistorySnapshot())
         override val sensorValues = MutableStateFlow<Map<String, String>>(emptyMap())
         fun switchTo(id: String, metadata: DeviceCapabilities) {
             connectionState.value = ConnectionState.Connecting

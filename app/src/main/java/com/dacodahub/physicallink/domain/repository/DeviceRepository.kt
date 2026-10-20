@@ -10,7 +10,10 @@ interface DeviceRepository {
     val devices: StateFlow<List<DiscoveredDevice>>
     val connectionState: StateFlow<ConnectionState>
     val capabilities: StateFlow<DeviceCapabilities?>
+    val sensorHistory: StateFlow<SensorHistorySnapshot>
     val sensorValues: StateFlow<Map<String, String>>
+    /** Same monotonic time base used for this repository's receive timestamps. */
+    fun monotonicNowMs(): Long = System.nanoTime() / 1_000_000
     fun startScan()
     fun stopScan()
     fun connect(address: String)

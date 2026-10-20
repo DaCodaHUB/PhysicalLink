@@ -34,6 +34,7 @@ class BleScanner(private val context: Context) {
     fun startScan() = onMain {
         if (activeCallback != null) return@onMain
         try {
+            checkPermissions()
             val adapter = checkNotNull(bluetoothManager?.adapter) { "Bluetooth unavailable on this device." }
             check(adapter.isEnabled) { "Bluetooth is disabled. Turn it on, then scan again." }
             val scanner = checkNotNull(adapter.bluetoothLeScanner) { "Bluetooth scanner unavailable. Turn Bluetooth on and retry." }
@@ -72,19 +73,26 @@ class BleScanner(private val context: Context) {
         catch (error: IllegalStateException) { finish(ScanState.Error(error.message ?: "Cannot scan. Turn Bluetooth on and retry.")) }
     }
 
-    fun stopScan() = onMain { finish(ScanState.Idle) }
+    fun stopScan(clearError: Boolean = false) = onMain {
+        // Lifecycle cleanup must not erase an already-completed failure diagnostic.
+        if (activeCallback != null || clearError) finish(ScanState.Idle)
+    }
 
     fun refreshEnvironment() = onMain {
         if (activeCallback == null) return@onMain
         try {
-            val permission = if (Build.VERSION.SDK_INT >= 31) Manifest.permission.BLUETOOTH_SCAN else Manifest.permission.ACCESS_FINE_LOCATION
-            if (context.checkSelfPermission(permission) != PackageManager.PERMISSION_GRANTED) {
-                finish(permissionError())
-                return@onMain
-            }
+            checkPermissions()
             if (bluetoothManager?.adapter?.isEnabled != true)
                 finish(ScanState.Error("Bluetooth is disabled. Turn it on, then scan again."))
         } catch (_: SecurityException) { finish(permissionError()) }
+    }
+
+    private fun checkPermissions() {
+        val permissions = if (Build.VERSION.SDK_INT >= 31)
+            listOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)
+        else listOf(Manifest.permission.ACCESS_FINE_LOCATION)
+        if (permissions.any { context.checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED })
+            throw SecurityException("Bluetooth scan permissions missing")
     }
 
     private fun permissionError() = ScanState.Error("Bluetooth permission denied. Allow Nearby devices (or Location on Android 11 and earlier) in app settings, then scan again.")

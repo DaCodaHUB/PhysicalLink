@@ -42,9 +42,13 @@ class DashboardPersistenceTest {
         val repository = DataStoreDashboardLayoutRepository(store, worker)
         repository.update("B") { layout("B") }.await()
         val invalid = listOf("{broken", "{}",
-            DashboardLayoutCodec.encode("A", layout("A")).replace("\"version\":1", "\"version\":99"),
+            DashboardLayoutCodec.encode("A", layout("A")).replace("\"version\":2", "\"version\":99"),
             DashboardLayoutCodec.encode("A", layout("A")).replace("VALUE", "FUTURE"),
-            DashboardLayoutCodec.encode("B", layout("B")))
+            DashboardLayoutCodec.encode("B", layout("B")),
+            org.json.JSONObject(DashboardLayoutCodec.encode("A", layout("A"))).put("version", 1.5).toString(),
+            org.json.JSONObject(DashboardLayoutCodec.encode("A", layout("A"))).apply {
+                getJSONArray("widgets").getJSONObject(0).getJSONObject("settings").put("precision", 1.5)
+            }.toString())
         for (record in invalid) {
             store.edit { it[stringPreferencesKey("layout:A")] = record }
             assertNull(repository.observe("A").first())
@@ -89,7 +93,7 @@ class DashboardPersistenceTest {
     @Test fun `reconciliation keeps missing hidden duplicate and resized widgets and appends new sensors once`() {
         val saved = layout("A").copy(widgets = layout("A").widgets.reversed())
         val reconciled = saved.withDiscoveredSensors("A", metadata("temperature", "new", "new"))
-        assertEquals(saved.widgets, reconciled.widgets.take(3))
+        assertEquals(saved.widgets, reconciled.widgets.take(saved.widgets.size))
         assertEquals("new", reconciled.widgets.last().source.capabilityId)
         assertEquals(reconciled, reconciled.withDiscoveredSensors("A", metadata("new")))
         assertEquals(reconciled, reconciled.withDiscoveredSensors("A", metadata()))
@@ -126,6 +130,37 @@ class DashboardPersistenceTest {
         assertEquals(2, saved.widgets.first().columnSpan)
         assertEquals(WidgetType.VALUE, saved.widgets[1].type)
     }
+    @Test fun `version one migrates on disk preserving all widget configuration and supports version two settings`() = runBlocking {
+        val worker = scope()
+        val store = createTestDashboardDataStore(worker) { File(temporary.root, "migration.preferences_pb") }
+        val key = stringPreferencesKey("layout:A")
+        val legacy = """{"version":1,"deviceId":"A","widgets":[{"id":"stable","type":"GAUGE","deviceId":"A","capabilityId":"temperature","columnSpan":2,"rowSpan":3,"hidden":true}]}"""
+        store.edit { it[key] = legacy }
+        val repository = DataStoreDashboardLayoutRepository(store, worker)
+        val migrated = repository.observe("A").first()!!
+        val original = DashboardWidget("stable", WidgetType.GAUGE, SensorSource("A", "temperature"), 2, 3, true)
+        assertEquals(listOf(original), migrated.widgets)
+        assertEquals(2, org.json.JSONObject(store.data.first()[key]!!).getInt("version"))
+        val settings = WidgetSettings(900, -10.0, 40.0, 0.0, 35.0, 4, 45)
+        repository.update("A") { it!!.configureWidget("stable", WidgetType.RANGE, settings) }.await()
+        assertEquals(original.copy(type = WidgetType.RANGE, settings = settings), repository.observe("A").first()!!.widgets.single())
+        repository.update("A") { null }.await()
+        assertNull(repository.observe("A").first())
+    }
+
+    @Test fun `invalid persisted settings recover safely without touching other devices`() = runBlocking {
+        val worker = scope()
+        val store = createTestDashboardDataStore(worker) { File(temporary.root, "settings-corruption.preferences_pb") }
+        val repository = DataStoreDashboardLayoutRepository(store, worker)
+        repository.update("B") { layout("B") }.await()
+        val encoded = DashboardLayoutCodec.encode("A", layout("A"))
+        val broken = org.json.JSONObject(encoded)
+        broken.getJSONArray("widgets").getJSONObject(0).getJSONObject("settings").put("precision", 100)
+        store.edit { it[stringPreferencesKey("layout:A")] = broken.toString() }
+        assertNull(repository.observe("A").first())
+        assertEquals(layout("B"), repository.observe("B").first())
+    }
+
     private fun metadata(vararg ids: String) = DeviceCapabilities(1, "Board", ids.map {
         DeviceCapability(it, "uuid-$it", "C", "number")
     })

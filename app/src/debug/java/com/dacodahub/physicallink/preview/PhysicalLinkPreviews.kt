@@ -56,9 +56,15 @@ private val deviceId = "preview-only"
         DashboardContent(ConnectionState.Connected, dashboardState(deviceId, capabilities, emptyMap(), layout).copy(isEditing = true), deviceId, capabilities)
     }
 }
-@Preview(name = "Future visualizations - explicitly unavailable", showBackground = true, widthDp = 393)
-@Composable private fun UnavailableRangePreview() {
-    PhysicalLinkTheme(dynamicColor = false) { UnavailableVisualization("Sensor", WidgetPresentation.RANGE) }
+@Preview(name = "Visualizations - real empty states", showBackground = true, widthDp = 393, heightDp = 852)
+@Composable private fun VisualizationsPreview() {
+    val source = SensorSource(deviceId, "soil")
+    val layout = DashboardLayout(WidgetType.entries.map { type ->
+        DashboardWidget(type.name, type, source, columnSpan = 2)
+    })
+    PhysicalLinkTheme(dynamicColor = false) {
+        DashboardContent(ConnectionState.Connected, dashboardState(deviceId, capabilities, emptyMap(), layout), deviceId, capabilities)
+    }
 }
 
 // Advertisement fixtures below are preview-only, not observations from real hardware.
@@ -70,10 +76,31 @@ private val deviceId = "preview-only"
     }
 }
 
-@Preview(name = "Widget configuration - Value only", showBackground = true, widthDp = 393, heightDp = 852)
+@Preview(name = "Widget configuration - numeric visualizations", showBackground = true, widthDp = 393, heightDp = 852)
 @Composable private fun WidgetConfigurationPreview() {
     PhysicalLinkTheme(dynamicColor = false) {
         val widget = dashboardState(deviceId, capabilities, emptyMap(), null).widgets.first()
         WidgetConfigurationSheet(widget, capabilities.device, 0, 4, DashboardActions(), onDismiss = {})
+    }
+}
+
+@Preview(name = "Demo Mode - waiting", showBackground = true, widthDp = 393, heightDp = 852)
+@Preview(name = "Demo Mode - dark", showBackground = true, widthDp = 393, heightDp = 852,
+    uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Composable private fun DemoDashboardPreview() {
+    val metadata = com.dacodahub.physicallink.data.repository.DemoDeviceRepository.CAPABILITIES
+    val identity = com.dacodahub.physicallink.data.repository.DemoDeviceRepository.DEVICE_ID
+    val state = dashboardState(identity, metadata, emptyMap(), null)
+    PhysicalLinkTheme(dynamicColor = false) {
+        DashboardContent(ConnectionState.Connected, state.copy(widgets = state.widgets.map { it.copy(simulated = true) }),
+            identity, metadata, isDemo = true)
+    }
+}
+
+@Preview(name = "First run - skippable introduction", showBackground = true, widthDp = 393, heightDp = 852)
+@Preview(name = "First run - large text", showBackground = true, widthDp = 360, heightDp = 960, fontScale = 1.6f)
+@Composable private fun FirstRunPreview() {
+    PhysicalLinkTheme(dynamicColor = false) {
+        DevicesContent(emptyList(), ConnectionState.Disconnected, ScanState.Idle, showIntroduction = true)
     }
 }

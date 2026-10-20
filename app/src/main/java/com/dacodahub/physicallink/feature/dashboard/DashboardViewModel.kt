@@ -1,5 +1,7 @@
 package com.dacodahub.physicallink.feature.dashboard
 
+import androidx.lifecycle.SavedStateHandle
+import com.dacodahub.physicallink.data.repository.DemoDeviceRepository
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.dacodahub.physicallink.domain.model.*
@@ -15,9 +17,15 @@ import kotlinx.coroutines.flow.*
 @OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class DashboardViewModel @Inject constructor(
-    private val repository: DeviceRepository,
-    private val layouts: DashboardLayoutRepository
+    realRepository: DeviceRepository,
+    private val layouts: DashboardLayoutRepository,
+    savedStateHandle: SavedStateHandle
 ) : ViewModel() {
+    val isDemo: Boolean = savedStateHandle["demo"] ?: false
+    private val demo = if (isDemo) DemoDeviceRepository(MonotonicClock { realRepository.monotonicNowMs() }) else null
+    private val repository: DeviceRepository = demo ?: realRepository
+    suspend fun simulateDemoWhileVisible() { demo?.simulateWhileVisible() }
+
     val deviceId = repository.connectedDeviceId
     val devices = repository.devices
     val connectionState = repository.connectionState
@@ -48,12 +56,22 @@ class DashboardViewModel @Inject constructor(
     }.stateIn(viewModelScope, SharingStarted.Eagerly, LoadedLayout(null))
 
     private val persistenceStatus = combine(loaded, saveError) { layout, error -> layout to error }
-    val dashboard = combine(repository.connectedDeviceId, capabilities, sensorValues, persistenceStatus, editing) {
-            deviceId, metadata, values, status, isEditing ->
+    private val presentationInputs = combine(sensorValues, repository.sensorHistory, connectionState) { values, history, connection ->
+        Triple(values, history, connection)
+    }
+    private val ticks = flow { while (currentCoroutineContext().isActive) { emit(repository.monotonicNowMs()); delay(1000) } }
+    // Read the clock on every input too: a packet can arrive between one-second ticks.
+    private val presentation = combine(presentationInputs, ticks) { inputs, _ -> inputs to repository.monotonicNowMs() }
+    val dashboard = combine(repository.connectedDeviceId, capabilities, presentation, persistenceStatus, editing) {
+            deviceId, metadata, presentationState, status, isEditing ->
+        val (inputs, now) = presentationState
+        val (values, history, connection) = inputs
         val (saved, error) = status
         val ready = saved.deviceId == deviceId && saved.ready
-        val state = if (ready) dashboardState(deviceId, metadata, values, saved.layout) else DashboardState()
-        state.copy(isEditing = isEditing, loadingLayout = !ready, persistenceError = saved.error ?: error?.takeIf { it.first == deviceId }?.second)
+        val state = if (ready) dashboardState(deviceId, metadata, values, saved.layout, history, now,
+            connection == ConnectionState.Connected) else DashboardState()
+        state.copy(widgets = state.widgets.map { it.copy(simulated = isDemo) },
+            hiddenWidgets = state.hiddenWidgets.map { it.copy(simulated = isDemo) }, isEditing = isEditing, loadingLayout = !ready, persistenceError = saved.error ?: error?.takeIf { it.first == deviceId }?.second)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DashboardState(loadingLayout = true))
 
     init {
@@ -100,9 +118,17 @@ class DashboardViewModel @Inject constructor(
     fun moveWidgetBy(id: String, direction: Int) = edit { it.moveWidgetBy(id, direction) }
     fun toggleWidth(id: String) = edit { it.toggleWidgetWidth(id) }
     fun resizeWidget(id: String, columns: Int) = edit { it.resizeWidget(id, columns) }
+    fun configureWidget(id: String, type: WidgetType, settings: WidgetSettings) {
+        if (settings.validationError() != null) return
+        edit { it.configureWidget(id, type, settings) }
+    }
     fun useValueWidget(id: String) = edit { it.setWidgetType(id, WidgetType.VALUE) }
     fun hideWidget(id: String) = edit { it.setWidgetHidden(id, true) }
     fun restoreWidget(id: String) = edit { it.setWidgetHidden(id, false) }
+    fun duplicateWidget(id: String) {
+        val newId = UUID.randomUUID().toString()
+        edit { it.duplicateWidget(id, newId) }
+    }
     fun addWidget(source: SensorSource) {
         if (source.deviceId != repository.connectedDeviceId.value ||
             capabilities.value?.validDashboardCapabilities()?.none { it.id == source.capabilityId } != false) return

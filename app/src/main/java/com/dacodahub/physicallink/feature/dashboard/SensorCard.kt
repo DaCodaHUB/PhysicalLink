@@ -11,11 +11,11 @@ import androidx.compose.ui.unit.sp
 import com.dacodahub.physicallink.domain.model.DeviceCapability
 
 @Composable
-internal fun SensorCard(capability: DeviceCapability, value: String?, controls: WidgetControls? = null) {
-    val reading = formatSensorValue(value, capability.type)
+internal fun SensorCard(capability: DeviceCapability, value: String?, controls: WidgetControls? = null, precision: Int = 2, freshness: String? = null) {
+    val reading = formatSensorValue(value, capability.type, precision)
     val unit = sensorUnit(capability.unit)
     val waiting = value.isNullOrBlank()
-    WidgetContainer(sensorName(capability.id), status = if (waiting) "Waiting for a reading" else null, controls = controls) {
+    WidgetContainer(sensorName(capability.id), status = freshness ?: if (waiting) "Waiting for a reading" else null, controls = controls) {
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp),
             modifier = Modifier.clearAndSetSemantics {
                 contentDescription = if (waiting) "No reading yet" else listOf(reading, unit).filter { it.isNotEmpty() }.joinToString(" ")

@@ -21,8 +21,8 @@ class SharedDeviceSessionTest {
     @Test
     fun `both view models expose the same session and forward explicit actions`() {
         val repository = FakeDeviceRepository()
-        val devices = DevicesViewModel(repository)
-        val dashboard = DashboardViewModel(repository, FakeDashboardLayoutRepository())
+        val devices = DevicesViewModel(repository, com.dacodahub.physicallink.FakeOnboardingRepository())
+        val dashboard = DashboardViewModel(repository, FakeDashboardLayoutRepository(), androidx.lifecycle.SavedStateHandle())
         assertSame(devices.connectionState, dashboard.connectionState)
         assertSame(repository.devices, devices.devices)
         assertSame(repository.capabilities, dashboard.capabilities)
@@ -51,6 +51,7 @@ class SharedDeviceSessionTest {
         override val devices = MutableStateFlow<List<DiscoveredDevice>>(emptyList())
         override val connectionState = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
         override val capabilities = MutableStateFlow<DeviceCapabilities?>(null)
+        override val sensorHistory = MutableStateFlow(com.dacodahub.physicallink.domain.model.SensorHistorySnapshot())
         override val sensorValues = MutableStateFlow<Map<String, String>>(emptyMap())
         var scanning = false
         var connectedAddress: String? = null

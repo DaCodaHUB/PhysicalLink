@@ -1,8 +1,8 @@
-# Dashboard persistence (Sprint 2B)
+# Dashboard persistence (Sprint 2B, updated for Sprint 3B)
 
 ## Ownership and writes
 
-DashboardLayoutRepository is the domain interface. DataStoreDashboardLayoutRepository owns a FIFO command queue on an application coroutine scope and wraps a single Preferences DataStore created by the singleton Hilt DashboardModule provider. No BLE manager, GATT, firmware, or live-reading storage changes are involved. DataStore Preferences is the only new production dependency.
+DashboardLayoutRepository is the domain interface. DataStoreDashboardLayoutRepository owns a FIFO command queue on an application coroutine scope and wraps a single Preferences DataStore created by the singleton Hilt DashboardModule provider. Persistence remains separate from BLE, GATT, and in-memory reading history. DataStore Preferences is the only new production dependency.
 
 DataStore is the layout source of truth. Each editing command transforms the latest stored layout atomically in a DataStore edit transaction. The ViewModel does not hold a second optimistic configuration. Observed commits drive the existing DashboardState and widget rendering. Rapid commands are applied in submission order, including reset. Commands accepted before navigation continue in the application scope, even when the originating ViewModel is cleared. There can be a brief disk-commit delay before an edit appears. Sensor readings combine independently with observed configuration and never trigger disk writes.
 
@@ -14,7 +14,7 @@ File: app-private files/datastore/dashboard_layouts.preferences_pb. One string p
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "deviceId": "AA:BB:CC:DD:EE:FF",
   "widgets": [
     {
@@ -24,13 +24,22 @@ File: app-private files/datastore/dashboard_layouts.preferences_pb. One string p
       "capabilityId": "temperature",
       "columnSpan": 2,
       "rowSpan": 1,
-      "hidden": false
+      "hidden": false,
+      "settings": {
+        "chartWindowSeconds": 60,
+        "minimum": null,
+        "maximum": null,
+        "lowerThreshold": null,
+        "upperThreshold": null,
+        "precision": 2,
+        "staleAfterSeconds": 15
+      }
     }
   ]
 }
 ```
 
-Array order is widget order. VALUE, GAUGE, and CHART enum names round-trip; unsupported renderers still show the existing fallback. Duplicate sources are valid; widget IDs must be unique. IDs and capability IDs must be nonblank, sources must belong to the record's device, columnSpan must be 1 or 2, and rowSpan must be positive. No sensor values or device capability JSON are persisted.
+Array order is widget order. VALUE, GAUGE, CHART, and RANGE enum names round-trip. Gauge/Range need explicit finite ordered bounds; migrated unconfigured widgets ask for bounds. Duplicate sources are valid; widget IDs must be unique. IDs and capability IDs must be nonblank, sources must belong to the record's device, columnSpan must be 1 or 2, and rowSpan must be positive. No sensor values or device capability JSON are persisted.
 
 Missing key means no customization. An explicitly empty widget array is a saved empty layout, distinct from a missing key. Default generation happens only after a successful load finds no customization. Defaults are not saved until an actual edit occurs.
 
@@ -42,7 +51,7 @@ Reset confirmation clears only the current device's preference, then rendering r
 
 ## Recovery and errors
 
-Wrong preference value types, malformed JSON, unknown schema versions or widget types, foreign device IDs, invalid dimensions, or duplicate widget IDs reject the affected record. Recovery logs a warning and removes that exact record only if its raw value still matches; a newer concurrent save is protected. Rendering then uses current defaults. Other device records survive. Version 1 has no older migrations; future format changes should add explicit version migrations here. Unknown future data is currently discarded rather than preserved for downgrade recovery.
+Wrong preference value types, malformed JSON, unknown schema versions or widget types, foreign device IDs, invalid dimensions, or duplicate widget IDs reject the affected record. Recovery logs a warning and removes that exact record only if its raw value still matches; a newer concurrent save is protected. Rendering then uses current defaults. Other device records survive. Version 1 records load with default WidgetSettings and migrate to version 2 through compare-and-replace, preserving IDs, sources, sizing, visibility, and order. Concurrent edits/reset cannot be overwritten by migration. Integer settings must be integral numbers; bounds/thresholds must be valid finite numbers. Invalid settings reject the affected device record under the same recovery policy. Unknown future data is currently discarded rather than preserved for downgrade recovery.
 
 If the Preferences protobuf file itself is corrupt, ReplaceFileCorruptionHandler logs a warning and replaces the entire container with empty preferences; all devices return to defaults. Regular IO failures are not treated as corruption: failed loads show a retry message and retry after one second; failed saves log a warning and show an error while retaining committed configuration. Failed edits are not silently cached or automatically replayed; the user can try the operation again. Normal DataStore atomic-write durability applies; force-killing the process before a queued write commits can lose that last edit. BLE addresses and configuration are local app data, subject to Android app backup settings.
 

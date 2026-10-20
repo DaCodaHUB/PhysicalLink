@@ -31,7 +31,7 @@ internal fun connectionLabel(state: ConnectionState): String = when (state) {
     ConnectionState.Discovering -> "Loading sensors"
     ConnectionState.Disconnected -> "Not connected"
     ConnectionState.ConnectionLost -> "Connection lost"
-    is ConnectionState.Error -> "Could not connect"
+    is ConnectionState.Error -> connectionFailureTitle(state)
 }
 
 /** Inline status for compact device headers; text conveys state independently of color. */

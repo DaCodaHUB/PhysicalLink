@@ -22,6 +22,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import com.dacodahub.physicallink.core.designsystem.*
 import com.dacodahub.physicallink.domain.model.*
 
@@ -30,12 +33,18 @@ internal data class DashboardActions(
     val devices: () -> Unit = {}, val disconnect: () -> Unit = {}, val editing: (Boolean) -> Unit = {},
     val move: (String, String) -> Unit = { _, _ -> }, val moveBy: (String, Int) -> Unit = { _, _ -> },
     val hide: (String) -> Unit = {}, val restore: (String) -> Unit = {},
+    val duplicate: (String) -> Unit = {},
     val add: (SensorSource) -> Unit = {}, val reset: () -> Unit = {},
+    val configure: (String, WidgetType, WidgetSettings) -> Unit = { _, _, _ -> },
     val resize: (String, Int) -> Unit = { _, _ -> }, val useValue: (String) -> Unit = {}
 )
 
 @Composable
 fun DashboardScreen(onDevices: () -> Unit, viewModel: DashboardViewModel = hiltViewModel()) {
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(viewModel, lifecycle) {
+        if (viewModel.isDemo) lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) { viewModel.simulateDemoWhileVisible() }
+    }
     val connection by viewModel.connectionState.collectAsStateWithLifecycle()
     val dashboard by viewModel.dashboard.collectAsStateWithLifecycle()
     val deviceId by viewModel.deviceId.collectAsStateWithLifecycle()
@@ -47,15 +56,16 @@ fun DashboardScreen(onDevices: () -> Unit, viewModel: DashboardViewModel = hiltV
     DashboardContent(connection, dashboard, deviceId, capabilities, devices.find { it.address == deviceId }?.rssi,
         DashboardActions(devices = onDevices, disconnect = viewModel::disconnect, editing = viewModel::setEditing,
             move = viewModel::moveWidget, moveBy = viewModel::moveWidgetBy, hide = viewModel::hideWidget,
-            restore = viewModel::restoreWidget, add = viewModel::addWidget, reset = viewModel::resetLayout,
-            resize = viewModel::resizeWidget, useValue = viewModel::useValueWidget))
+            duplicate = viewModel::duplicateWidget, restore = viewModel::restoreWidget, add = viewModel::addWidget, reset = viewModel::resetLayout,
+            configure = viewModel::configureWidget, resize = viewModel::resizeWidget, useValue = viewModel::useValueWidget), isDemo = viewModel.isDemo)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun DashboardContent(
     connection: ConnectionState, dashboard: DashboardState, deviceId: String? = null,
-    capabilities: DeviceCapabilities? = null, rssi: Int? = null, actions: DashboardActions = DashboardActions()
+    capabilities: DeviceCapabilities? = null, rssi: Int? = null, actions: DashboardActions = DashboardActions(),
+    isDemo: Boolean = false
 ) {
     val grid = rememberLazyGridState()
     var showAdd by remember(deviceId) { mutableStateOf(false) }
@@ -81,6 +91,7 @@ internal fun DashboardContent(
         if (!connected) currentActions.editing(false)
     }
     LaunchedEffect(deviceId) { clearDrag() }
+    BackHandler(enabled = isDemo && !dashboard.isEditing) { actions.devices() }
     BackHandler(enabled = dashboard.isEditing) { clearDrag(); actions.editing(false) }
 
     Scaffold(topBar = {
@@ -88,20 +99,22 @@ internal fun DashboardContent(
             Column(Modifier.testTag("device-header")) {
                 Text(if (dashboard.isEditing) "Edit dashboard" else name, maxLines = 1,
                     overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium)
-                if (dashboard.isEditing) Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                if (dashboard.isEditing) Text(if (isDemo) "$name - Demo Mode" else name, maxLines = 1, overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                else if (isDemo) Text("Demo Mode - Simulated readings", style = MaterialTheme.typography.bodySmall)
                 else DeviceConnectionText(connection)
             }
         }, navigationIcon = {
             if (!dashboard.isEditing) IconButton(onClick = actions.devices,
                 modifier = Modifier.semantics { contentDescription = "Devices" }) { ActionGlyph(Glyph.BACK) }
         }, actions = {
+            if (isDemo) TextButton(onClick = actions.devices) { Text("Exit Demo") }
             if (dashboard.isEditing) {
                 TextButton(onClick = { clearDrag(); actions.editing(false) }) { Text("Done") }
             } else {
                 if (connected) IconButton(onClick = { actions.editing(true) }, enabled = !dashboard.loadingLayout && !dashboard.discovering,
                     modifier = Modifier.semantics { contentDescription = "Edit dashboard" }) { ActionGlyph(Glyph.EDIT) }
-                Box {
+                if (!isDemo) Box {
                     IconButton(onClick = { menu = true }, modifier = Modifier.semantics { contentDescription = "More device actions" }) {
                         ActionGlyph(Glyph.MORE)
                     }
@@ -123,6 +136,9 @@ internal fun DashboardContent(
                     modifier = Modifier.testTag("dashboard-grid").onGloballyPositioned { gridOrigin = it.positionInRoot() },
                     userScrollEnabled = draggingId == null, contentPadding = PaddingValues(16.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    if (isDemo) item(key = "demo-explanation", span = { GridItemSpan(maxLineSpan) }) {
+                        Text("These readings are simulated. Exit Demo to connect your own ESP32.", style = MaterialTheme.typography.bodySmall)
+                    }
                     if (!connected || dashboard.loadingLayout || dashboard.discovering || dashboard.persistenceError != null || dashboard.widgets.isEmpty()) {
                         item(key = "dashboard-notice", span = { GridItemSpan(maxLineSpan) }) {
                             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {

@@ -82,4 +82,24 @@ class DeviceCapabilitiesParserTest {
         }
     }
 
+    @Test fun `untrusted metadata rejects trailing content oversized and deeply nested payloads`() {
+        val valid = """{"version":1,"device":"Board","capabilities":[]}"""
+        listOf(valid + " garbage", " ".repeat(20000) + valid,
+            "[".repeat(1000) + "0" + "]".repeat(1000)).forEach { payload ->
+            assertThrows(Exception::class.java) { DeviceCapabilitiesParser.parse(payload) }
+        }
+    }
+
+    @Test fun `capability count and JSON comments cannot bypass resource bounds`() {
+        val sensors = (0..64).joinToString(",") { """{"id":"sensor$it","uuid":"${(4096 + it).toString(16)}","unit":"raw","type":"number"}""" }
+        assertThrows(IllegalArgumentException::class.java) {
+            DeviceCapabilitiesParser.parse("""{"version":1,"device":"Board","capabilities":[$sensors]}""")
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            DeviceCapabilitiesParser.parse("""{/* ignored */"version":1,"device":"Board","capabilities":[]}""")
+        }
+        val quoted = """{"version":1,"device":"Board { [ / \" quoted","capabilities":[]}"""
+        assertEquals("Board { [ / \" quoted", DeviceCapabilitiesParser.parse(quoted).device)
+    }
+
 }

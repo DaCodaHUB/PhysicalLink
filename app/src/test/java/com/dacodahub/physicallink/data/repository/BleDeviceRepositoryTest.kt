@@ -64,4 +64,12 @@ class BleDeviceRepositoryTest {
         verify(scanner, never()).startScan(isNull(), any(ScanSettings::class.java), any(ScanCallback::class.java))
         assertEquals(ConnectionState.Connecting, repository.connectionState.value)
     }
+    @Test fun `queued background connect and scan are serialized with the connection guard`() {
+        val thread = Thread { repository.connect("AA:BB:CC:DD:EE:FF"); repository.startScan() }
+        thread.start(); thread.join()
+        shadowOf(Looper.getMainLooper()).idle()
+        verify(scanner, never()).startScan(isNull(), any(ScanSettings::class.java), any(ScanCallback::class.java))
+        assertEquals(ConnectionState.Connecting, repository.connectionState.value)
+    }
+
 }

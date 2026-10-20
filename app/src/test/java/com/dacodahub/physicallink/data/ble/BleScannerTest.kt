@@ -119,4 +119,24 @@ class BleScannerTest {
         assertEquals(ScanState.Idle, scanner.state.value)
         assertTrue(scanner.devices.value.isEmpty())
     }
+    @Test fun `lifecycle stop after failure retains scan diagnostic`() {
+        scanner.startScan(); idle()
+        callbacks.single().onScanFailed(2); idle()
+        val error = scanner.state.value
+        scanner.stopScan(); scanner.stopScan(); idle()
+        assertEquals(error, scanner.state.value)
+    }
+    @Test fun `missing runtime permission prevents platform scan and connect permission revocation stops it`() {
+        `when`(context.checkSelfPermission(Manifest.permission.BLUETOOTH_SCAN)).thenReturn(PackageManager.PERMISSION_DENIED)
+        scanner.startScan(); idle()
+        assertTrue(callbacks.isEmpty())
+        assertTrue(scanner.state.value is ScanState.Error)
+        `when`(context.checkSelfPermission(Manifest.permission.BLUETOOTH_SCAN)).thenReturn(PackageManager.PERMISSION_GRANTED)
+        scanner.startScan(); idle()
+        `when`(context.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT)).thenReturn(PackageManager.PERMISSION_DENIED)
+        scanner.refreshEnvironment(); idle()
+        assertTrue(scanner.state.value is ScanState.Error)
+        verify(platformScanner).stopScan(callbacks.single())
+    }
+
 }

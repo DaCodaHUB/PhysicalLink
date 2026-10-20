@@ -41,3 +41,15 @@ fun DashboardLayout.resizeWidget(id: String, columns: Int): DashboardLayout {
 fun DashboardLayout.setWidgetType(id: String, type: WidgetType): DashboardLayout = copy(
     widgets = widgets.map { if (it.id == id) it.copy(type = type) else it }
 )
+
+fun DashboardLayout.configureWidget(id: String, type: WidgetType, settings: WidgetSettings): DashboardLayout {
+    require(settings.validationError() == null) { settings.validationError().orEmpty() }
+    return copy(widgets = widgets.map { if (it.id == id) it.copy(type = type, settings = settings) else it })
+}
+
+/** Duplicate visualization settings while giving the copy an independent stable identity. */
+fun DashboardLayout.duplicateWidget(id: String, newId: String): DashboardLayout {
+    val original = widgets.find { it.id == id } ?: return this
+    if (newId.isBlank() || widgets.any { it.id == newId }) return this
+    return copy(widgets = widgets + original.copy(id = newId, hidden = false))
+}

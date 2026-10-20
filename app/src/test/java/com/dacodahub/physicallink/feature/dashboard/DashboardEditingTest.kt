@@ -89,7 +89,7 @@ class DashboardEditingTest {
 
     @Test fun `view model edits retain live updates and reset returns to discovery defaults`() = runBlocking {
         val repository = FakeRepository(capabilities)
-        val vm = DashboardViewModel(repository, FakeDashboardLayoutRepository())
+        val vm = DashboardViewModel(repository, FakeDashboardLayoutRepository(), androidx.lifecycle.SavedStateHandle())
         val store = ViewModelStore()
         store.put("dashboard", vm)
         suspend fun awaitState(predicate: (DashboardState) -> Boolean) =
@@ -139,6 +139,7 @@ class DashboardEditingTest {
         override val devices = MutableStateFlow<List<DiscoveredDevice>>(emptyList())
         override val connectionState = MutableStateFlow<ConnectionState>(ConnectionState.Connected)
         override val capabilities = MutableStateFlow<DeviceCapabilities?>(metadata)
+        override val sensorHistory = MutableStateFlow(com.dacodahub.physicallink.domain.model.SensorHistorySnapshot())
         override val sensorValues = MutableStateFlow<Map<String, String>>(emptyMap())
         override fun startScan() {}
         override fun stopScan() {}

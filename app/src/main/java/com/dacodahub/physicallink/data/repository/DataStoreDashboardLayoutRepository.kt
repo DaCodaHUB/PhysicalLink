@@ -52,6 +52,9 @@ class DataStoreDashboardLayoutRepository(
         if (layout == null) {
             // Never erase a newer write that raced with recovery of an older bad record.
             store.edit { if (it.asMap()[key] == raw) it.remove(key) }
+        } else if (raw is String && DashboardLayoutCodec.isLegacy(raw)) {
+            // Compare-and-replace protects a newer edit or reset racing with v1 migration.
+            store.edit { if (it.asMap()[key] == raw) it[key] = DashboardLayoutCodec.encode(deviceId, layout) }
         }
         layout
     }.distinctUntilChanged()

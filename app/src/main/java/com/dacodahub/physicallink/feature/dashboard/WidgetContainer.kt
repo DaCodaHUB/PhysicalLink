@@ -9,10 +9,7 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 
-/** Presentation kinds only. RANGE is deliberately not added to the persisted WidgetType enum. */
-internal enum class WidgetPresentation(val label: String) { VALUE("Value"), GAUGE("Gauge"), CHART("Chart"), RANGE("Range") }
-
-/** Shared surface/header/content/status slots for current values and future visualizations. */
+/** Shared surface/header/content/status slots for values and numeric visualizations. */
 @Composable
 internal fun WidgetContainer(
     title: String, modifier: Modifier = Modifier, status: String? = null, controls: WidgetControls? = null,
@@ -27,14 +24,5 @@ internal fun WidgetContainer(
             if (status != null) Text(status, style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-    }
-}
-
-/** Explicitly nonfunctional, with no mock scale, graph, progress, or selectable range. */
-@Composable
-internal fun UnavailableVisualization(title: String, presentation: WidgetPresentation, controls: WidgetControls? = null) {
-    WidgetContainer(title, controls = controls) {
-        Text(presentation.label, style = MaterialTheme.typography.titleLarge)
-        Text("${presentation.label} visualization is not available yet.", style = MaterialTheme.typography.bodyMedium)
     }
 }

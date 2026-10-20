@@ -29,10 +29,10 @@ class DashboardUiTest {
 
     @Test fun `compact header enters edit mode and sheet duplicates the same source`() {
         var editing by mutableStateOf(false)
-        var duplicated: SensorSource? = null
+        var duplicated: String? = null
         compose.setContent { PhysicalLinkTheme(dynamicColor = false) {
             DashboardContent(ConnectionState.Connected, initial.copy(isEditing = editing), "board", capabilities,
-                actions = DashboardActions(editing = { editing = it }, add = { duplicated = it }))
+                actions = DashboardActions(editing = { editing = it }, duplicate = { duplicated = it }))
         } }
         compose.onNodeWithText("Test project").assertIsDisplayed()
         compose.onNodeWithText("Connected").assertIsDisplayed()
@@ -43,7 +43,7 @@ class DashboardUiTest {
         compose.onNodeWithText("Widget settings").assertIsDisplayed()
         compose.onNodeWithText("Move up").performScrollTo().assertIsNotEnabled()
         compose.onNodeWithText("Duplicate widget").performScrollTo().performClick()
-        assertEquals(SensorSource("board", "temperature"), duplicated)
+        assertEquals(initial.widgets.single().widget.id, duplicated)
         compose.onNodeWithText("Done").performClick()
         compose.onNodeWithContentDescription("Configure Temperature widget 1").assertDoesNotExist()
     }
@@ -145,7 +145,7 @@ class DashboardUiTest {
         assertTrue(opened)
     }
 
-    @Test fun `configuration width selection is explicit and only Value is offered`() {
+    @Test fun `configuration width selection is explicit and real numeric visualizations are offered`() {
         var columns by mutableStateOf(1)
         val widget = initial.widgets.single().widget
         compose.setContent { PhysicalLinkTheme(dynamicColor = false) {
@@ -159,9 +159,9 @@ class DashboardUiTest {
         compose.onNodeWithText("Full").assertIsSelected().performClick()
         assertEquals(2, columns)
         compose.onNodeWithText("Value").assertIsSelected()
-        compose.onNodeWithText("Gauge").assertDoesNotExist()
-        compose.onNodeWithText("Chart").assertDoesNotExist()
-        compose.onNodeWithText("Range").assertDoesNotExist()
+        compose.onNodeWithText("Gauge").assertExists()
+        compose.onNodeWithText("Chart").assertExists()
+        compose.onNodeWithText("Range").assertExists()
     }
 
     @Test fun `hide and restore keep original widget identity and ordering`() {
@@ -225,6 +225,133 @@ class DashboardUiTest {
         compose.onNodeWithText("Widget settings").assertExists()
         compose.onNodeWithText("Close settings").performScrollTo().performClick()
         compose.onNodeWithContentDescription("12345678901234567890 \u00b0C").assertExists()
+    }
+
+    @Test fun `gauge settings validate bounds and apply real settings to the same widget`() {
+        var configured: Triple<String, WidgetType, WidgetSettings>? = null
+        compose.setContent { PhysicalLinkTheme(dynamicColor = false) {
+            DashboardContent(ConnectionState.Connected, initial.copy(isEditing = true), "board", capabilities,
+                actions = DashboardActions(configure = { id, type, settings -> configured = Triple(id, type, settings) }))
+        } }
+        configure()
+        compose.onNodeWithText("Gauge").performScrollTo().performClick()
+        compose.onNodeWithText("Apply settings").performScrollTo().performClick()
+        compose.onNodeWithText("Set both minimum and maximum.").assertExists()
+        assertNull(configured)
+        compose.onNodeWithText("Minimum").performScrollTo().performTextInput("-10")
+        compose.onNodeWithText("Maximum").performScrollTo().performTextInput("40")
+        compose.onNodeWithText("Apply settings").performScrollTo().performClick()
+        assertEquals(initial.widgets.single().widget.id, configured!!.first)
+        assertEquals(WidgetType.GAUGE, configured!!.second)
+        assertEquals(-10.0, configured!!.third.minimum!!, 0.0)
+        assertEquals(40.0, configured!!.third.maximum!!, 0.0)
+    }
+
+    @Test fun `chart empty state never fabricates data and a real single sample has accessible axes`() {
+        var points by mutableStateOf(emptyList<NumericSample>())
+        val source = SensorSource("board", "temperature")
+        val widget = initial.widgets.single().widget.copy(type = WidgetType.CHART, columnSpan = 2)
+        compose.setContent { PhysicalLinkTheme(dynamicColor = false) {
+            val history = SensorHistorySnapshot("board", 1, true, mapOf(source to SensorTimeline(points, 1000, 12.0, true)))
+            DashboardContent(ConnectionState.Connected, dashboardState("board", capabilities, mapOf("temperature" to "12"),
+                DashboardLayout(listOf(widget)), history, 1000, true), "board", capabilities)
+        } }
+        compose.onNodeWithText("Waiting for numeric samples in this time window.").assertExists()
+        compose.runOnIdle { points = listOf(NumericSample(1000, 12.0, 0)) }
+        compose.onNodeWithContentDescription("Line chart, 1 samples", substring = true).assertExists()
+        compose.onNodeWithText("Live").assertExists()
+        compose.onNodeWithText("Now").assertExists()
+    }
+
+    @Test fun `range shows actual units and explicitly flags a reading above its bounds`() {
+        val source = SensorSource("board", "temperature")
+        val widget = initial.widgets.single().widget.copy(type = WidgetType.RANGE,
+            settings = WidgetSettings(minimum = -10.0, maximum = 40.0, upperThreshold = 30.0))
+        val history = SensorHistorySnapshot("board", 1, true,
+            mapOf(source to SensorTimeline(listOf(NumericSample(1000, 42.0, 0)), 1000, 42.0, true)))
+        compose.setContent { PhysicalLinkTheme(dynamicColor = false) {
+            DashboardContent(ConnectionState.Connected, dashboardState("board", capabilities, mapOf("temperature" to "42"),
+                DashboardLayout(listOf(widget)), history, 20000, true), "board", capabilities)
+        } }
+        compose.onNodeWithText("42 \u00b0C").assertExists()
+        compose.onNodeWithText("Above configured maximum").assertExists()
+        compose.onNodeWithText("Stale - last update 19s ago").assertExists()
+        compose.onNodeWithText("Live").assertDoesNotExist()
+    }
+
+    @Test fun `Try Demo opens simulated dashboard and Exit Demo returns without radio actions`() {
+        var demo by mutableStateOf(false)
+        var radioActions = 0
+        val demoMetadata = com.dacodahub.physicallink.data.repository.DemoDeviceRepository.CAPABILITIES
+        val demoId = com.dacodahub.physicallink.data.repository.DemoDeviceRepository.DEVICE_ID
+        compose.setContent { PhysicalLinkTheme(dynamicColor = false) {
+            if (!demo) DevicesContent(emptyList(), ConnectionState.Disconnected, ScanState.Idle,
+                permissionDenied = true, onTryDemo = { demo = true }, onScan = { radioActions++ }, onConnect = { radioActions++ })
+            else DashboardContent(ConnectionState.Connected, dashboardState(demoId, demoMetadata, emptyMap(), null),
+                demoId, demoMetadata, actions = DashboardActions(devices = { demo = false }, disconnect = { radioActions++ }), isDemo = true)
+        } }
+        compose.onNodeWithText("Try Demo").performClick()
+        compose.onNodeWithText("Demo Sensor Station").assertExists()
+        compose.onNodeWithText("Demo Mode - Simulated readings").assertExists()
+        compose.onNodeWithText("These readings are simulated. Exit Demo to connect your own ESP32.").assertExists()
+        compose.onNodeWithContentDescription("More device actions").assertDoesNotExist()
+        compose.onNodeWithText("Exit Demo").performClick()
+        compose.onNodeWithText("Try Demo").assertExists()
+        assertEquals(0, radioActions)
+    }
+
+    @Test fun `demo entry remains available alongside a real active connection and editing remains available`() {
+        var demo by mutableStateOf(false)
+        var editing by mutableStateOf(false)
+        var disconnected = 0
+        val demoMetadata = com.dacodahub.physicallink.data.repository.DemoDeviceRepository.CAPABILITIES
+        val demoId = com.dacodahub.physicallink.data.repository.DemoDeviceRepository.DEVICE_ID
+        compose.setContent { PhysicalLinkTheme(dynamicColor = false) {
+            if (!demo) DevicesContent(emptyList(), ConnectionState.Connected, ScanState.Idle, "real", capabilities,
+                onTryDemo = { demo = true }, onCancel = { disconnected++ })
+            else DashboardContent(ConnectionState.Connected, dashboardState(demoId, demoMetadata, emptyMap(), null).copy(isEditing = editing),
+                demoId, demoMetadata, actions = DashboardActions(devices = { demo = false }, editing = { editing = it }), isDemo = true)
+        } }
+        compose.onNodeWithText("Try Demo").performScrollTo().performClick()
+        compose.onNodeWithContentDescription("Edit dashboard").performClick()
+        compose.onNodeWithText("Done").assertExists()
+        compose.onNodeWithText("Exit Demo").assertExists()
+        compose.onNodeWithContentDescription("Configure Temperature widget 1").performScrollTo().performClick()
+        compose.onNodeWithText("Widget settings").assertExists()
+        compose.onNodeWithText("Gauge").assertExists()
+        compose.onNodeWithText("Close settings").performScrollTo().performClick()
+        compose.onNodeWithText("Exit Demo").performClick()
+        compose.onNodeWithText("Open dashboard").assertExists()
+        assertEquals(0, disconnected)
+    }
+
+    @Test fun `timeout recovery is explicit and retry can be cancelled as a normal disconnect`() {
+        var connection by mutableStateOf<ConnectionState>(ConnectionState.Error("Connection timed out"))
+        var attempts = 0
+        compose.setContent { PhysicalLinkTheme(dynamicColor = false) {
+            DevicesContent(emptyList(), connection, ScanState.Idle, "board", onConnect = {
+                assertEquals("board", it); attempts++; connection = ConnectionState.Connecting
+            }, onCancel = { connection = ConnectionState.Disconnected })
+        } }
+        compose.onNodeWithText("Connection timed out").assertExists()
+        assertEquals(0, attempts)
+        compose.onNodeWithText("Retry connection").performScrollTo().performClick()
+        assertEquals(1, attempts)
+        compose.onNodeWithText("Retrying connection").assertExists()
+        compose.onNodeWithText("Cancel connection").performScrollTo().performClick()
+        compose.onNodeWithText("Retrying connection").assertDoesNotExist()
+        compose.onNodeWithText("Project disconnected").assertDoesNotExist()
+        assertEquals(1, attempts)
+    }
+    @Test fun `finished empty scan is distinguished from never scanning`() {
+        var scan by mutableStateOf<ScanState>(ScanState.Idle)
+        compose.setContent { PhysicalLinkTheme(dynamicColor = false) {
+            DevicesContent(emptyList(), ConnectionState.Disconnected, scan)
+        } }
+        compose.onNodeWithText("No devices found yet").assertExists()
+        compose.runOnIdle { scan = ScanState.Scanning }
+        compose.runOnIdle { scan = ScanState.Idle }
+        compose.onNodeWithText("No compatible devices found").assertExists()
     }
 
     @Test fun `friendly signal boundaries do not imply exact distance`() {

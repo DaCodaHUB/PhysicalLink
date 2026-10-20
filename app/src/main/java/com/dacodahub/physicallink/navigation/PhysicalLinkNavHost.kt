@@ -1,6 +1,8 @@
 package com.dacodahub.physicallink.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.navigation.NavType
+import androidx.navigation.navArgument
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -19,9 +21,13 @@ fun PhysicalLinkNavHost() {
         composable(Destinations.Devices) {
             DevicesScreen(onOpenDashboard = {
                 navController.navigate(Destinations.Dashboard) { launchSingleTop = true }
+            }, onTryDemo = {
+                navController.navigate("${Destinations.Dashboard}?demo=true") { launchSingleTop = true }
             })
         }
-        composable(Destinations.Dashboard) {
+        composable("${Destinations.Dashboard}?demo={demo}", arguments = listOf(navArgument("demo") {
+            type = NavType.BoolType; defaultValue = false
+        })) {
             DashboardScreen(onDevices = {
                 navController.popBackStack(Destinations.Devices, inclusive = false)
             })

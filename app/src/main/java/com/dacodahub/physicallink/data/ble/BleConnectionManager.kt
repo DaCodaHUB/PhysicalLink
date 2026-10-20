@@ -24,7 +24,12 @@ data class SensorReadings(
 )
 
 @SuppressLint("MissingPermission")
-class BleConnectionManager(private val context: Context) {
+class BleConnectionManager(
+    private val context: Context,
+    private val onSensorReading: (DeviceCapability, String) -> Unit = { _, _ -> },
+    private val onSessionStarted: (String) -> Unit = {},
+    private val onSessionEnded: () -> Unit = {}
+) {
     companion object {
         private fun uuid(short: String) =
             UUID.fromString("0000$short-0000-1000-8000-00805f9b34fb")
@@ -52,6 +57,7 @@ class BleConnectionManager(private val context: Context) {
     private var activeCharacteristic: BluetoothGattCharacteristic? = null
     private var activeDescriptor: BluetoothGattDescriptor? = null
     private var startFailure: String? = null
+    private var pendingCapabilities: DeviceCapabilities? = null
     private var sensorCapabilitiesByUuid = emptyMap<UUID, DeviceCapability>()
     private val _deviceId = MutableStateFlow<String?>(null)
     val deviceId = _deviceId.asStateFlow()
@@ -89,6 +95,14 @@ class BleConnectionManager(private val context: Context) {
                 }
             }
             started
+        },
+        onIdle = {
+            val ready = pendingCapabilities
+            if (gatt != null && _connectionState.value == ConnectionState.Discovering && ready != null) {
+                pendingCapabilities = null
+                _capabilities.value = ready
+                _connectionState.value = ConnectionState.Connected
+            }
         },
         onFailure = { operation, reason ->
             val detail = startFailure ?: reason
@@ -164,6 +178,7 @@ class BleConnectionManager(private val context: Context) {
             // Always post callbacks, even when delivered on main, so assignment
             // completes before a connection callback examines the session.
             val device = adapter.getRemoteDevice(address)
+            onSessionStarted(address)
             gatt = if (Build.VERSION.SDK_INT >= 37) {
                 val settings = BluetoothGattConnectionSettings.Builder()
                     .setAutoConnectEnabled(false)
@@ -214,7 +229,7 @@ class BleConnectionManager(private val context: Context) {
                 if (status != BluetoothGatt.GATT_SUCCESS || newState == BluetoothProfile.STATE_DISCONNECTED) {
                     val state = if (linkConnected) ConnectionState.ConnectionLost
                     else if (status != BluetoothGatt.GATT_SUCCESS) ConnectionState.Error("Connection failed (code $status). Check device power, move closer, then reconnect.")
-                    else ConnectionState.Disconnected
+                    else ConnectionState.Error("Device disconnected before connection completed. Check device power and range, then retry.")
                     endSession(state)
                 } else if (newState == BluetoothProfile.STATE_CONNECTED && !linkConnected) {
                     linkConnected = true
@@ -238,7 +253,7 @@ class BleConnectionManager(private val context: Context) {
 
         override fun onServicesDiscovered(callbackGatt: BluetoothGatt, status: Int) {
             handler.post {
-                if (callbackGatt !== gatt || _connectionState.value != ConnectionState.Discovering) return@post
+                if (callbackGatt !== gatt || _connectionState.value != ConnectionState.Discovering || operationQueue.current != null) return@post
                 cancelTimeout()
                 if (status != BluetoothGatt.GATT_SUCCESS) {
                     endSession(ConnectionState.Error("Service discovery failed: $status"))
@@ -248,7 +263,7 @@ class BleConnectionManager(private val context: Context) {
                     endSession(ConnectionState.Error("PhysicalLink service not found"))
                     return@post
                 }
-                _connectionState.value = ConnectionState.Connected
+                // Remain Discovering until metadata, initial reads, and subscriptions succeed.
                 // Each target is used once per operation type in this session.
                 // Android callbacks carry no request ID; never retry a timed-out
                 // request on the same GATT, where a late callback is ambiguous.
@@ -306,10 +321,9 @@ class BleConnectionManager(private val context: Context) {
             if (operation.characteristicUuid != characteristic.uuid) return@post
             if (status == BluetoothGatt.GATT_SUCCESS) {
                 if (characteristic.uuid == CAPABILITIES_UUID) {
-                    val json = value.toString(Charsets.UTF_8)
-
                     try {
-                        val parsed = DeviceCapabilitiesParser.parse(json)
+                        require(value.size <= DeviceCapabilitiesParser.MAX_JSON_LENGTH) { "Capability payload is too large" }
+                        val parsed = DeviceCapabilitiesParser.parse(value.decodeToString(throwOnInvalidSequence = true))
                         val sensors = parsed.capabilities.associateBy { capabilityUuid(it.uuid) }
                         val service = checkNotNull(callbackGatt.getService(SERVICE_UUID)) { "PhysicalLink service not found" }
                         val operations = sensors.keys.flatMap { sensorUuid ->
@@ -331,7 +345,7 @@ class BleConnectionManager(private val context: Context) {
                         }
                         // Validate all metadata and GATT targets before publishing to dashboard persistence.
                         sensorCapabilitiesByUuid = sensors
-                        _capabilities.value = parsed
+                        pendingCapabilities = parsed
                         operationQueue.enqueue(operations)
                     } catch (e: Exception) {
                         Log.e("PhysicalLink", "Invalid capability description", e)
@@ -375,6 +389,7 @@ class BleConnectionManager(private val context: Context) {
         val capability = sensorCapabilitiesByUuid[uuid]
 
         if (capability != null) {
+            onSensorReading(capability, text)
             _sensorValues.value += (capability.id to text)
         }
 
@@ -412,7 +427,9 @@ class BleConnectionManager(private val context: Context) {
         disconnectingGatt = oldGatt
 
         _readings.value = SensorReadings()
+        onSessionEnded()
         _sensorValues.value = emptyMap()
+        pendingCapabilities = null
         sensorCapabilitiesByUuid = emptyMap()
         _capabilities.value = null
         _connectionState.value = ConnectionState.Disconnected
@@ -460,8 +477,10 @@ class BleConnectionManager(private val context: Context) {
                 context.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
                 throw SecurityException("Bluetooth permission revoked")
             }
-            if (bluetoothManager?.adapter?.isEnabled != true) {
-                endSession(ConnectionState.Error("Bluetooth is disabled or unavailable. Turn it on, then reconnect."))
+            val adapter = bluetoothManager?.adapter
+            if (adapter == null) endSession(ConnectionState.Error("Bluetooth unavailable on this device."))
+            else if (!adapter.isEnabled) {
+                endSession(ConnectionState.Error("Bluetooth is disabled. Turn it on, then reconnect."))
             }
         } catch (_: SecurityException) {
             endSession(ConnectionState.Error("Bluetooth permission denied. Allow Nearby devices in app settings, then reconnect."))
@@ -485,7 +504,9 @@ class BleConnectionManager(private val context: Context) {
         }
 
         _readings.value = SensorReadings()
+        onSessionEnded()
         _sensorValues.value = emptyMap()
+        pendingCapabilities = null
         sensorCapabilitiesByUuid = emptyMap()
         _capabilities.value = null
         _connectionState.value = state

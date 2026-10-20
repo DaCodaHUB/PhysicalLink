@@ -6,6 +6,8 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.dacodahub.physicallink.domain.model.*
@@ -29,11 +31,22 @@ internal fun DeviceDetails(
                         is ConnectionState.Error -> connectionState.message
                         else -> connectionLabel(connectionState)
                     })
-                    if (scanState is ScanState.Error) DetailField("Scan diagnostics", scanState.message)
-                    DetailField("Reading timestamps", "Not available in the current reading stream. Freshness cannot be determined.")
+                    if (connectionState is ConnectionState.Error || connectionState == ConnectionState.ConnectionLost)
+                        DetailField("Connection guidance", connectionHelp(connectionState))
+                    if (scanState != null) DetailField("Scan", when (scanState) {
+                        ScanState.Scanning -> "Scanning for compatible projects"
+                        ScanState.Idle -> "Not scanning"
+                        is ScanState.Error -> "Scan failed"
+                    })
+                    if (scanState is ScanState.Error) {
+                        DetailField("Scan diagnostics", scanState.message)
+                        DetailField("Scan guidance", scanHelp(scanState.message))
+                    }
+                    DetailField("Compatibility", "The current scanner lists devices advertising as PhysicalLink Soil. Connection also requires matching PhysicalLink firmware and valid sensor capabilities.")
+                    DetailField("Reading timestamps", "Local monotonic receive time; not the sensor clock. Session history is held in memory only.")
                     if (capabilities != null) {
                         DetailField("Capability protocol", "Version ${capabilities.version}")
-                        Text("Sensors (${capabilities.capabilities.size})", style = MaterialTheme.typography.titleSmall)
+                        Text("Sensors (${capabilities.capabilities.size})", Modifier.semantics { heading() }, style = MaterialTheme.typography.titleSmall)
                         capabilities.capabilities.forEach { sensor ->
                             DetailField(sensor.id, "UUID: ${sensor.uuid}\nType: ${sensor.type}\nUnit: ${sensor.unit.ifEmpty { "Not supplied" }}")
                         }
@@ -52,7 +65,7 @@ internal fun DeviceDetails(
 @Composable
 private fun DetailField(label: String, value: String) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(label, Modifier.semantics { heading() }, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(value, style = MaterialTheme.typography.bodyMedium)
     }
 }

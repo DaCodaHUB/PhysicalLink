@@ -261,6 +261,110 @@ class BleConnectionManagerTest {
             }
         }
     }
+    @Test fun `receive observer captures identical packets and rejects retired session callbacks`() {
+        val readings = mutableListOf<String>()
+        val starts = mutableListOf<String>()
+        var ends = 0
+        manager = BleConnectionManager(context, { capability, value ->
+            assertEquals("soil", capability.id); readings += value
+        }, { starts += it }, { ends++ })
+        services(); readMetadata()
+        callback.onCharacteristicRead(client, sensor, "12".toByteArray(), 0); idle()
+        callback.onCharacteristicChanged(client, sensor, "12".toByteArray()); idle()
+        assertEquals(listOf("12", "12"), readings)
+        assertEquals(listOf("AA:BB:CC:DD:EE:FF"), starts)
+        val previous = callback
+        manager.disconnect(); idle()
+        val before = ends
+        previous.onCharacteristicChanged(client, sensor, "99".toByteArray()); idle()
+        assertEquals(2, readings.size)
+        assertTrue(before > 0)
+        nextClient = mock(BluetoothGatt::class.java)
+        manager.connect("11:22:33:44:55:66"); idle()
+        previous.onCharacteristicChanged(client, sensor, "100".toByteArray()); idle()
+        previous.onConnectionStateChange(client, 8, BluetoothProfile.STATE_DISCONNECTED); idle()
+        assertEquals(2, readings.size)
+        assertEquals("11:22:33:44:55:66", starts.last())
+        assertEquals(ConnectionState.Connecting, manager.connectionState.value)
+    }
+
+    @Test fun `connected and capabilities are withheld until every setup operation succeeds`() {
+        services()
+        assertEquals(ConnectionState.Discovering, manager.connectionState.value)
+        readMetadata()
+        assertNull(manager.capabilities.value)
+        callback.onCharacteristicRead(client, sensor, "12".toByteArray(), 0); idle()
+        assertEquals(ConnectionState.Discovering, manager.connectionState.value)
+        callback.onDescriptorWrite(client, sensor.getDescriptor(uuid("2902")), 0); idle()
+        assertEquals(ConnectionState.Connected, manager.connectionState.value)
+        assertEquals("soil", manager.capabilities.value!!.capabilities.single().id)
+    }
+    @Test fun `zero status disconnect before link completion is a failure not user cancellation`() {
+        connect()
+        callback.onConnectionStateChange(client, 0, BluetoothProfile.STATE_DISCONNECTED); idle()
+        assertTrue(manager.connectionState.value is ConnectionState.Error)
+        verify(client).close()
+    }
+
+    @Test fun `failed subscription cannot publish capabilities to dashboard reconciliation`() {
+        val published = mutableListOf<com.dacodahub.physicallink.domain.model.DeviceCapabilities?>()
+        val observer = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Unconfined).launch {
+            manager.capabilities.collect { published += it }
+        }
+        services(); readMetadata()
+        callback.onCharacteristicRead(client, sensor, "12".toByteArray(), 0); idle()
+        callback.onDescriptorWrite(client, sensor.getDescriptor(uuid("2902")), BluetoothGatt.GATT_FAILURE); idle()
+        assertTrue(published.all { it == null })
+        assertTrue(manager.connectionState.value is ConnectionState.Error)
+        verify(client).close()
+        observer.cancel()
+    }
+    @Test fun `duplicate service callback cannot enqueue reads twice or cancel setup timeout`() {
+        services()
+        callback.onServicesDiscovered(client, 0); idle()
+        verify(client, times(1)).readCharacteristic(metadata)
+        idleFor(6)
+        verify(client).close()
+        assertTrue(manager.connectionState.value is ConnectionState.Error)
+    }
+    @Test fun `same address retry ignores old reads descriptors disconnects and timeout`() {
+        services(); readMetadata()
+        manager.disconnect(); idle()
+        val oldCallback = callback
+        val replacement = mock(BluetoothGatt::class.java)
+        nextClient = replacement
+        manager.connect("AA:BB:CC:DD:EE:FF"); idle()
+        oldCallback.onCharacteristicRead(client, sensor, "99".toByteArray(), 0)
+        oldCallback.onDescriptorWrite(client, sensor.getDescriptor(uuid("2902")), 0)
+        oldCallback.onServicesDiscovered(client, 0)
+        oldCallback.onConnectionStateChange(client, 0, BluetoothProfile.STATE_DISCONNECTED)
+        idleFor(6)
+        assertEquals(ConnectionState.Connecting, manager.connectionState.value)
+        assertTrue(manager.sensorValues.value.isEmpty())
+        assertNull(manager.capabilities.value)
+        verify(client).close()
+        verify(replacement, never()).close()
+    }
+    @Test fun `cancelling metadata read clears queued setup and rejects every late callback`() {
+        services()
+        manager.disconnect(); idle()
+        readMetadata()
+        callback.onCharacteristicChanged(client, sensor, "99".toByteArray()); idle()
+        idleFor(6)
+        assertEquals(ConnectionState.Disconnected, manager.connectionState.value)
+        assertNull(manager.capabilities.value)
+        assertTrue(manager.sensorValues.value.isEmpty())
+        verify(client, never()).readCharacteristic(sensor)
+        verify(client).close()
+    }
+    @Test fun `malformed UTF8 metadata closes the client without publishing capabilities`() {
+        services()
+        callback.onCharacteristicRead(client, metadata, byteArrayOf(0xc3.toByte(), 0x28), 0); idle()
+        assertTrue(manager.connectionState.value is ConnectionState.Error)
+        assertNull(manager.capabilities.value)
+        verify(client).close()
+    }
+
     private fun replaceSensor(replacement: BluetoothGattCharacteristic) {
         val replacementService = BluetoothGattService(uuid("1234"), BluetoothGattService.SERVICE_TYPE_PRIMARY)
         replacementService.addCharacteristic(metadata)

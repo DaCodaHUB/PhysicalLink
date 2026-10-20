@@ -5,7 +5,11 @@ import com.dacodahub.physicallink.domain.model.*
 data class DashboardWidgetState(
     val widget: DashboardWidget,
     val capability: DeviceCapability?,
-    val value: String?
+    val value: String?,
+    val timeline: SensorTimeline? = null,
+    val freshness: ReadingFreshness = ReadingFreshness.UNAVAILABLE,
+    val nowMs: Long = 0,
+    val simulated: Boolean = false
 )
 
 data class DashboardState(
@@ -24,14 +28,20 @@ fun dashboardState(
     deviceId: String?,
     capabilities: DeviceCapabilities?,
     values: Map<String, String>,
-    configuration: DashboardLayout?
+    configuration: DashboardLayout?,
+    history: SensorHistorySnapshot? = null,
+    nowMs: Long = 0,
+    connected: Boolean = true
 ): DashboardState {
     val layout = configuration ?: defaultDashboard(deviceId, capabilities)
     val sensors = capabilities?.validDashboardCapabilities().orEmpty().associateBy { it.id }
     val widgets = layout.widgets.filter { it.id.isNotBlank() }.distinctBy { it.id }.map { widget ->
         val capability = sensors[widget.source.capabilityId]
             .takeIf { !deviceId.isNullOrBlank() && widget.source.deviceId == deviceId }
-        DashboardWidgetState(widget, capability, capability?.let { values[it.id] })
+        val timeline = history?.takeIf { it.deviceId == deviceId }?.sensors?.get(widget.source)
+        DashboardWidgetState(widget, capability, capability?.let { values[it.id] }, timeline,
+            readingFreshness(timeline, connected && history?.active == true && capability != null,
+                nowMs, widget.settings.staleAfterSeconds), nowMs)
     }
     return DashboardState(
         deviceName = capabilities?.device,

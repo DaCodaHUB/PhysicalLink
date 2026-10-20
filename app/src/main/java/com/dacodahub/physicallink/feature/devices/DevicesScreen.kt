@@ -28,10 +28,14 @@ import com.dacodahub.physicallink.core.designsystem.DeviceConnectionText
 import com.dacodahub.physicallink.core.designsystem.ActionGlyph
 import com.dacodahub.physicallink.core.designsystem.Glyph
 import com.dacodahub.physicallink.core.designsystem.DeviceDetails
+import com.dacodahub.physicallink.core.designsystem.connectionHelp
+import com.dacodahub.physicallink.core.designsystem.scanHelp
+import com.dacodahub.physicallink.core.designsystem.connectionFailureTitle
 import com.dacodahub.physicallink.domain.model.*
 
 @Composable
-fun DevicesScreen(onOpenDashboard: () -> Unit, viewModel: DevicesViewModel = hiltViewModel()) {
+fun DevicesScreen(onOpenDashboard: () -> Unit, onTryDemo: () -> Unit = {}, viewModel: DevicesViewModel = hiltViewModel()) {
+    val showIntroduction by viewModel.showIntroduction.collectAsStateWithLifecycle()
     val devices by viewModel.devices.collectAsStateWithLifecycle()
     val connection by viewModel.connectionState.collectAsStateWithLifecycle()
     val scan by viewModel.scanState.collectAsStateWithLifecycle()
@@ -53,17 +57,26 @@ fun DevicesScreen(onOpenDashboard: () -> Unit, viewModel: DevicesViewModel = hil
         if (Build.VERSION.SDK_INT >= 31) arrayOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)
         else arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
     }
+    var explainPermissions by rememberSaveable { mutableStateOf(false) }
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { results ->
         permissionDenied = !permissions.all { results[it] == true || context.checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }
         if (!permissionDenied) viewModel.startScan()
     }
+    val requestScan: () -> Unit = {
+        if (permissions.all { context.checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }) {
+            permissionDenied = false
+            viewModel.startScan()
+        } else explainPermissions = true
+    }
+    if (explainPermissions) PermissionExplanation(Build.VERSION.SDK_INT < 31,
+        onDismiss = { explainPermissions = false }, onContinue = {
+            explainPermissions = false
+            permissionLauncher.launch(permissions)
+        })
     DevicesContent(devices, connection, scan, deviceId, capabilities, permissionDenied,
-        onScan = {
-            if (permissions.all { context.checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }) {
-                permissionDenied = false
-                viewModel.startScan()
-            } else permissionLauncher.launch(permissions)
-        }, onStopScan = viewModel::stopScan,
+        showIntroduction = showIntroduction, onDismissIntroduction = viewModel::dismissIntroduction,
+        onTryDemo = { openWhenConnected = false; onTryDemo() },
+        onScan = requestScan, onStopScan = viewModel::stopScan,
         onConnect = { address -> openWhenConnected = true; viewModel.connect(address) },
         onCancel = { openWhenConnected = false; viewModel.disconnect() }, onOpenDashboard = onOpenDashboard,
         onSettings = { context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}"))) })
@@ -75,8 +88,12 @@ internal fun DevicesContent(
     devices: List<DiscoveredDevice>, connection: ConnectionState, scan: ScanState,
     deviceId: String? = null, capabilities: DeviceCapabilities? = null, permissionDenied: Boolean = false,
     onScan: () -> Unit = {}, onStopScan: () -> Unit = {}, onConnect: (String) -> Unit = {},
-    onCancel: () -> Unit = {}, onOpenDashboard: () -> Unit = {}, onSettings: () -> Unit = {}
+    onTryDemo: () -> Unit = {}, onCancel: () -> Unit = {}, onOpenDashboard: () -> Unit = {}, onSettings: () -> Unit = {},
+    showIntroduction: Boolean = false, onDismissIntroduction: () -> Unit = {}
 ) {
+    var hasScanned by rememberSaveable { mutableStateOf(false) }
+    var retrying by rememberSaveable { mutableStateOf(false) }
+    var showGuide by rememberSaveable { mutableStateOf(false) }
     var showDetails by remember { mutableStateOf(false) }
     var detailsDevice by remember { mutableStateOf<DiscoveredDevice?>(null) }
     val selected = devices.find { it.address == deviceId }
@@ -84,6 +101,8 @@ internal fun DevicesContent(
     val connecting = connection == ConnectionState.Connecting || connection == ConnectionState.Discovering
     val name = capabilities?.device?.takeIf { it.isNotBlank() } ?: selected?.name ?: "Sensor project"
     val canScan = !connected && !connecting
+    LaunchedEffect(scan) { if (scan == ScanState.Scanning) hasScanned = true }
+    LaunchedEffect(connection) { if (!connecting) retrying = false }
 
     Scaffold(topBar = {
         TopAppBar(title = {
@@ -93,6 +112,7 @@ internal fun DevicesContent(
             }
         }, actions = {
             if (canScan) ScanControls(onScan, onStopScan, scan == ScanState.Scanning)
+            TextButton(onClick = { showGuide = true }, modifier = Modifier.semantics { contentDescription = "Getting Started" }) { Text("Help") }
             IconButton(onClick = { detailsDevice = selected; showDetails = true },
                 modifier = Modifier.semantics { contentDescription = "Device details" }) { ActionGlyph(Glyph.INFO) }
         })
@@ -108,7 +128,7 @@ internal fun DevicesContent(
                 }
                 when {
                     connecting -> item {
-                        StatePanel("Connecting to your project", "This can take a moment. Keep the device nearby.", progress = true) {
+                        StatePanel(if (retrying) "Retrying connection" else "Connecting to your project", "This can take a moment. Keep the device nearby.", progress = true) {
                             OutlinedButton(onClick = onCancel) { Text("Cancel connection") }
                         }
                     }
@@ -118,10 +138,28 @@ internal fun DevicesContent(
                         }
                     }
                 }
+                item {
+                    if (showIntroduction) StatePanel("Welcome to PhysicalLink", "Connect a compatible ESP32 sensor project and turn its readings into a dashboard you can customize.") {
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(onClick = { onDismissIntroduction(); onTryDemo() }) { Text("Try Demo") }
+                            OutlinedButton(onClick = { onDismissIntroduction(); onScan() }, enabled = canScan) { Text("Connect a Device") }
+                        }
+                        TextButton(onClick = onDismissIntroduction) { Text("Not now") }
+                    } else StatePanel("Explore without hardware", "Try simulated sensors and customize a dashboard. No Bluetooth permission needed.") {
+                        FilledTonalButton(onClick = { onDismissIntroduction(); onTryDemo() }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Try Demo") }
+                    }
+                }
                 if (canScan) {
                     if (!permissionDenied && scan !is ScanState.Error && (connection is ConnectionState.Error || connection == ConnectionState.ConnectionLost)) item {
-                        StatePanel(if (connection == ConnectionState.ConnectionLost) "Project disconnected" else "Could not connect",
-                            connectionHelp(connection), error = true)
+                        StatePanel(if (connection == ConnectionState.ConnectionLost) "Project disconnected" else connectionFailureTitle(connection),
+                            connectionHelp(connection), error = true) {
+                            if ((connection as? ConnectionState.Error)?.message?.contains("permission", true) == true)
+                                TextButton(onClick = onSettings) { Text("Open app settings") }
+                            else if (!deviceId.isNullOrBlank()) OutlinedButton(onClick = {
+                                retrying = true
+                                onConnect(deviceId)
+                            }) { Text("Retry connection") }
+                        }
                     }
                     if (permissionDenied || scan is ScanState.Error) item {
                         StatePanel("Scanning needs attention", if (permissionDenied) "Allow Nearby devices permission in app settings, then scan again. On Android 11 or earlier, allow Location."
@@ -134,7 +172,7 @@ internal fun DevicesContent(
                         StatePanel("Looking for nearby projects", "Scanning stops after 15 seconds.", progress = true)
                     }
                     if (devices.isEmpty() && scan == ScanState.Idle && !permissionDenied && connection !is ConnectionState.Error && connection != ConnectionState.ConnectionLost) item {
-                        StatePanel("No devices found yet", "Power on a compatible ESP32 project, keep it nearby, and tap Scan.")
+                        StatePanel(if (hasScanned) "No compatible devices found" else "No devices found yet", "Power on a project running matching PhysicalLink firmware and advertising as PhysicalLink Soil. Keep it nearby and tap Scan. See Help if it does not appear.")
                     }
                     if (devices.isNotEmpty()) {
                         item { Text("Nearby devices", Modifier.semantics { heading() }, style = MaterialTheme.typography.titleMedium) }
@@ -147,6 +185,7 @@ internal fun DevicesContent(
             }
         }
     }
+    if (showGuide) GettingStarted(onDismiss = { showGuide = false })
     if (showDetails) {
         val address = detailsDevice?.address ?: deviceId
         val current = address == deviceId
@@ -173,18 +212,4 @@ private fun StatePanel(
             actions()
         }
     }
-}
-
-private fun connectionHelp(state: ConnectionState): String = when {
-    state == ConnectionState.ConnectionLost -> "Check your project's power and range, then select it to reconnect. Your dashboard layout is saved."
-    (state as? ConnectionState.Error)?.message?.contains("permission", true) == true -> "Allow Nearby devices permission in app settings, then try again."
-    (state as? ConnectionState.Error)?.message?.contains("disabled", true) == true -> "Turn on Bluetooth, then try connecting again."
-    else -> "Check device power and Bluetooth, move your project closer, then try again. Diagnostics are in Details."
-}
-
-private fun scanHelp(message: String): String = when {
-    message.contains("permission", true) -> "Allow Nearby devices (or Location on Android 11 or earlier) in app settings, then scan again."
-    message.contains("disabled", true) -> "Turn on Bluetooth, then scan again."
-    message.contains("unavailable", true) -> "Bluetooth is unavailable. Check that Bluetooth is enabled, then try again."
-    else -> "Stop other Bluetooth scans, wait a moment, then try again. Diagnostics are in Details."
 }

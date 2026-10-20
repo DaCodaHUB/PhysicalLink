@@ -32,7 +32,7 @@ class DashboardStateTest {
         val source = SensorSource("a", temperature.id)
         val layout = DashboardLayout(WidgetType.entries.map { DashboardWidget(it.name, it, source) })
         val state = dashboardState("a", metadata(temperature), mapOf("temperature" to "12"), layout)
-        assertEquals(3, state.widgets.size)
+        assertEquals(4, state.widgets.size)
         assertTrue(state.widgets.all { it.value == "12" && it.capability == temperature })
         assertEquals("13", dashboardState("a", metadata(temperature), mapOf("temperature" to "13"), layout).widgets.first().value)
     }
