@@ -273,7 +273,7 @@ class DashboardUiTest {
             DashboardContent(ConnectionState.Connected, dashboardState("board", capabilities, mapOf("temperature" to "42"),
                 DashboardLayout(listOf(widget)), history, 20000, true), "board", capabilities)
         } }
-        compose.onNodeWithText("42 \u00b0C").assertExists()
+        compose.onNodeWithContentDescription("42 \u00b0C").assertExists()
         compose.onNodeWithText("Above configured maximum").assertExists()
         compose.onNodeWithText("Stale - last update 19s ago").assertExists()
         compose.onNodeWithText("Live").assertDoesNotExist()

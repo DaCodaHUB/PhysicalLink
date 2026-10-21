@@ -19,7 +19,7 @@ internal fun scanHelp(message: String): String = when {
     message.contains("permission", true) -> "Allow Nearby devices (or Location on Android 11 or earlier) in app settings, then scan again."
     message.contains("disabled", true) -> "Turn on Bluetooth, then scan again."
     message.contains("unavailable", true) -> "Bluetooth is unavailable. Check that Bluetooth is enabled, then try again."
-    else -> "Stop other Bluetooth scans, wait a moment, then try again. Check the board advertises as PhysicalLink Soil; see Getting Started."
+    else -> "Stop other Bluetooth scans, wait a moment, then try again. Check the board uses compatible firmware and the expected advertised name; see Device details."
 }
 
 internal fun connectionFailureTitle(state: ConnectionState): String {

@@ -31,3 +31,10 @@ internal fun chartSummary(state: DashboardWidgetState, series: ChartSeries): Str
         else "Latest recorded segment ${when { last.value > first.value -> "rose"; last.value < first.value -> "fell"; else -> "was unchanged" }} from ${number(first.value)} to ${number(last.value)} $unit over ${(last.timeMs - first.timeMs) / 1000} seconds."
     return "${sensorName(state.widget.source.capabilityId)}. Line chart, ${series.count} samples in the last ${state.widget.settings.chartWindowSeconds} seconds. Value axis ${axes.first} to ${axes.second} $unit. ${chartCurrentValue(state)}. ${freshnessLabel(state)}. $trend Gaps indicate missing updates; trend does not cross gaps."
 }
+
+/** Receive-time coordinates: new samples enter at the right; age moves them left. */
+internal fun chartTimeFraction(sampleMs: Long, nowMs: Long, windowSeconds: Int): Float {
+    require(windowSeconds > 0)
+    return (1.0 - (nowMs.toDouble() - sampleMs.toDouble()) / (windowSeconds * 1000.0))
+        .coerceIn(0.0, 1.0).toFloat()
+}

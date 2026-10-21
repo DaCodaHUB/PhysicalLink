@@ -32,6 +32,9 @@ internal fun WidgetConfigurationSheet(
     var freshness by remember(widget.id, widget.settings) { mutableStateOf(widget.settings.staleAfterSeconds.toString()) }
     var window by remember(widget.id, widget.settings) { mutableIntStateOf(widget.settings.chartWindowSeconds) }
     var error by remember(widget.id) { mutableStateOf<String?>(null) }
+    var widthSelected by remember(widget.id) { mutableStateOf(false) }
+    val defaultChartWidth = type == WidgetType.CHART && widget.type != WidgetType.CHART && !widthSelected
+    val displayedWidth = if (defaultChartWidth) 2 else widget.columnSpan
     val numeric = state.capability?.type?.equals("number", true) == true
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)
@@ -43,9 +46,9 @@ internal fun WidgetConfigurationSheet(
             if (state.capability == null) Text("Sensor unavailable. Your configuration is retained.", style = MaterialTheme.typography.bodySmall)
             Text("Widget width", style = MaterialTheme.typography.titleSmall)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterChip(selected = widget.columnSpan == 1, onClick = { actions.resize(widget.id, 1) },
+                FilterChip(selected = displayedWidth == 1, onClick = { widthSelected = true; actions.resize(widget.id, 1) },
                     label = { Text("Half") }, modifier = Modifier.heightIn(min = 48.dp))
-                FilterChip(selected = widget.columnSpan == 2, onClick = { actions.resize(widget.id, 2) },
+                FilterChip(selected = displayedWidth == 2, onClick = { widthSelected = true; actions.resize(widget.id, 2) },
                     label = { Text("Full") }, modifier = Modifier.heightIn(min = 48.dp))
             }
             Text("Half uses one column when space allows.", style = MaterialTheme.typography.bodySmall,
@@ -82,7 +85,12 @@ internal fun WidgetConfigurationSheet(
                 val settings = WidgetSettings(window, parsed[0], parsed[1], parsed[2], parsed[3], precision.toIntOrNull() ?: -1, freshness.toIntOrNull() ?: -1)
                 error = if (fields.zip(parsed).any { (text, number) -> text.isNotBlank() && number == null }) "Enter valid numeric bounds and thresholds."
                     else settings.validationError() ?: if ((type == WidgetType.GAUGE || type == WidgetType.RANGE) && !settings.hasRange) "Set both minimum and maximum." else null
-                if (error == null) { actions.configure(widget.id, type, settings); onDismiss() }
+                if (error == null) {
+                    actions.configure(widget.id, type, settings)
+                    // Existing charts and explicitly chosen widths are never resized on Apply.
+                    if (defaultChartWidth && widget.columnSpan != 2) actions.resize(widget.id, 2)
+                    onDismiss()
+                }
             }, modifier = Modifier.fillMaxWidth()) { Text("Apply settings") }
             HorizontalDivider()
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

@@ -35,6 +35,7 @@ import com.dacodahub.physicallink.domain.model.*
 
 @Composable
 fun DevicesScreen(onOpenDashboard: () -> Unit, onTryDemo: () -> Unit = {}, viewModel: DevicesViewModel = hiltViewModel()) {
+    val demoExplored by viewModel.demoExplored.collectAsStateWithLifecycle()
     val showIntroduction by viewModel.showIntroduction.collectAsStateWithLifecycle()
     val devices by viewModel.devices.collectAsStateWithLifecycle()
     val connection by viewModel.connectionState.collectAsStateWithLifecycle()
@@ -74,8 +75,8 @@ fun DevicesScreen(onOpenDashboard: () -> Unit, onTryDemo: () -> Unit = {}, viewM
             permissionLauncher.launch(permissions)
         })
     DevicesContent(devices, connection, scan, deviceId, capabilities, permissionDenied,
-        showIntroduction = showIntroduction, onDismissIntroduction = viewModel::dismissIntroduction,
-        onTryDemo = { openWhenConnected = false; onTryDemo() },
+        showIntroduction = showIntroduction, demoExplored = demoExplored, onDismissIntroduction = viewModel::dismissIntroduction,
+        onTryDemo = { openWhenConnected = false; viewModel.markDemoExplored(); onTryDemo() },
         onScan = requestScan, onStopScan = viewModel::stopScan,
         onConnect = { address -> openWhenConnected = true; viewModel.connect(address) },
         onCancel = { openWhenConnected = false; viewModel.disconnect() }, onOpenDashboard = onOpenDashboard,
@@ -89,7 +90,7 @@ internal fun DevicesContent(
     deviceId: String? = null, capabilities: DeviceCapabilities? = null, permissionDenied: Boolean = false,
     onScan: () -> Unit = {}, onStopScan: () -> Unit = {}, onConnect: (String) -> Unit = {},
     onTryDemo: () -> Unit = {}, onCancel: () -> Unit = {}, onOpenDashboard: () -> Unit = {}, onSettings: () -> Unit = {},
-    showIntroduction: Boolean = false, onDismissIntroduction: () -> Unit = {}
+    showIntroduction: Boolean = false, demoExplored: Boolean = false, onDismissIntroduction: () -> Unit = {}
 ) {
     var replayIntroduction by rememberSaveable { mutableStateOf(false) }
     fun dismissIntroduction() { replayIntroduction = false; onDismissIntroduction() }
@@ -147,6 +148,8 @@ internal fun DevicesContent(
                             OutlinedButton(onClick = { dismissIntroduction(); onScan() }, enabled = canScan) { Text("Connect a Device") }
                         }
                         TextButton(onClick = ::dismissIntroduction) { Text("Not now") }
+                    } else if (demoExplored) {
+                        TextButton(onClick = onTryDemo, modifier = Modifier.heightIn(min = 48.dp)) { Text("Try Demo") }
                     } else StatePanel("Explore without hardware", "Try simulated sensors and customize a dashboard. No Bluetooth permission needed.") {
                         FilledTonalButton(onClick = { dismissIntroduction(); onTryDemo() }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Try Demo") }
                     }
@@ -174,7 +177,7 @@ internal fun DevicesContent(
                         StatePanel("Looking for nearby projects", "Scanning stops after 15 seconds.", progress = true)
                     }
                     if (devices.isEmpty() && scan == ScanState.Idle && !permissionDenied && connection !is ConnectionState.Error && connection != ConnectionState.ConnectionLost) item {
-                        StatePanel(if (hasScanned) "No compatible devices found" else "No devices found yet", "Power on a project running matching PhysicalLink firmware and advertising as PhysicalLink Soil. Keep it nearby and tap Scan. See Help if it does not appear.")
+                        StatePanel(if (hasScanned) "No compatible devices found" else "No devices found yet", "Power on a compatible project running matching PhysicalLink firmware. Keep it nearby and tap Scan. See Help if it does not appear.")
                     }
                     if (devices.isNotEmpty()) {
                         item { Text("Nearby devices", Modifier.semantics { heading() }, style = MaterialTheme.typography.titleMedium) }

@@ -17,7 +17,7 @@ internal fun WidgetContainer(
     content: @Composable ColumnScope.() -> Unit
 ) {
     ElevatedCard(modifier.fillMaxWidth().semantics { isTraversalGroup = true }, shape = MaterialTheme.shapes.large) {
-        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.fillMaxWidth().padding(if (controls == null) 16.dp else 12.dp), verticalArrangement = Arrangement.spacedBy(if (controls == null) 12.dp else 6.dp)) {
             WidgetHeader(title, controls)
             if (controls?.target == true) Text("Drop here", Modifier.semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite },
                 style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)

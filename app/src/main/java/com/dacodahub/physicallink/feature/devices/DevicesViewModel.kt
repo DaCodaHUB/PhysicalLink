@@ -19,6 +19,21 @@ class DevicesViewModel @Inject constructor(private val repository: DeviceReposit
         emit(false) // Help and every normal action stay available if preferences cannot load.
     }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
+    val demoExplored = onboarding.demoExplored.catch { error ->
+        if (error is CancellationException) throw error
+        Logger.getLogger("Onboarding").log(Level.WARNING, "Unable to load demo preference", error)
+        emit(false)
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    fun markDemoExplored() {
+        val save = onboarding.markDemoExplored()
+        viewModelScope.launch {
+            try { save.await() }
+            catch (cancelled: CancellationException) { throw cancelled }
+            catch (error: Exception) { Logger.getLogger("Onboarding").log(Level.WARNING, "Unable to save demo preference", error) }
+        }
+    }
+
     fun dismissIntroduction() {
         val save = onboarding.dismissIntroduction()
         viewModelScope.launch {

@@ -9,7 +9,7 @@ data class DashboardWidget(
     val id: String,
     val type: WidgetType,
     val source: SensorSource,
-    val columnSpan: Int = 1,
+    val columnSpan: Int = if (type == WidgetType.CHART) 2 else 1,
     val rowSpan: Int = 1,
     val hidden: Boolean = false,
     val settings: WidgetSettings = WidgetSettings()

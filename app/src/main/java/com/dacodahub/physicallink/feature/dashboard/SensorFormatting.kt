@@ -30,3 +30,10 @@ internal fun formatSensorValue(value: String?, type: String, precision: Int = 2)
         rounded.toPlainString()
     }
 }
+
+/** Avoid a long string of digits dominating a narrow card. Never expand extreme exponents. */
+internal fun compactNumericReading(formatted: String): String {
+    if (formatted.length <= 12) return formatted
+    val number = formatted.toBigDecimalOrNull() ?: return formatted
+    return runCatching { number.round(java.math.MathContext(6, java.math.RoundingMode.HALF_UP)).stripTrailingZeros().toString() }.getOrDefault(formatted)
+}

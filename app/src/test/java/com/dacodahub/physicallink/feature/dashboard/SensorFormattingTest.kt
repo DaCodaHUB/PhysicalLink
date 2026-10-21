@@ -38,5 +38,12 @@ class SensorFormattingTest {
         assertEquals("opaque reading", formatSensorValue("opaque reading", "future-type"))
     }
 
+    @Test fun `compact numbers preserve ordinary readings and bound extreme formatting`() {
+        assertEquals("1004.99", compactNumericReading("1004.99"))
+        assertEquals("1.23457E+19", compactNumericReading("12345678901234567890"))
+        assertEquals("sensor unavailable", compactNumericReading("sensor unavailable"))
+        assertEquals("9e2147483647", compactNumericReading("9e2147483647"))
+        assertEquals("1E-2147483647", compactNumericReading("1e-2147483647"))
+    }
 }
 

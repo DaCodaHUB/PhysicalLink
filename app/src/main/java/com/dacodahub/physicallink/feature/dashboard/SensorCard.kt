@@ -16,14 +16,25 @@ internal fun SensorCard(capability: DeviceCapability, value: String?, controls: 
     val unit = sensorUnit(capability.unit)
     val waiting = value.isNullOrBlank()
     WidgetContainer(sensorName(capability.id), status = freshness ?: if (waiting) "Waiting for a reading" else null, controls = controls) {
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp),
-            modifier = Modifier.clearAndSetSemantics {
+        SensorReading(reading, unit, compact = controls != null, waiting = waiting, numeric = capability.type.equals("number", true))
+    }
+}
+
+/** A bounded visual number with the full reading retained for assistive technology. */
+@Composable
+internal fun SensorReading(reading: String, unit: String, compact: Boolean = false, waiting: Boolean = false, numeric: Boolean = true) {
+    val display = if (numeric) compactNumericReading(reading) else reading
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val unitWidth = maxWidth * 0.35f
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth().clearAndSetSemantics {
                 contentDescription = if (waiting) "No reading yet" else listOf(reading, unit).filter { it.isNotEmpty() }.joinToString(" ")
             }) {
-            Text(reading, style = MaterialTheme.typography.headlineLarge,
-                fontSize = when { reading.length > 18 -> 22.sp; reading.length > 10 -> 28.sp; else -> 36.sp },
-                softWrap = true)
-            if (unit.isNotEmpty()) Text(unit, Modifier.align(Alignment.CenterVertically),
+            Text(display, Modifier.weight(1f), style = MaterialTheme.typography.headlineLarge,
+                autoSize = androidx.compose.foundation.text.TextAutoSize.StepBased(minFontSize = 16.sp,
+                    maxFontSize = if (compact) 24.sp else 36.sp),
+                maxLines = if (numeric) 1 else 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+            if (unit.isNotEmpty()) Text(unit, Modifier.widthIn(max = unitWidth),
                 style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }

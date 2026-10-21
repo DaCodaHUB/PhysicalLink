@@ -26,6 +26,10 @@ class OnboardingViewModelTest {
             val first = DevicesViewModel(device, preferences); store.put("first", first)
             runCurrent()
             assertTrue(first.showIntroduction.value)
+            assertFalse(first.demoExplored.value)
+            first.markDemoExplored(); runCurrent()
+            assertTrue(first.demoExplored.value)
+            assertTrue(first.showIntroduction.value)
             assertEquals(0, scans)
             first.startScan(); assertEquals(1, scans)
             first.dismissIntroduction(); runCurrent()
@@ -34,6 +38,7 @@ class OnboardingViewModelTest {
             val reopened = DevicesViewModel(device, preferences); store.put("reopened", reopened)
             runCurrent()
             assertFalse(reopened.showIntroduction.value)
+            assertTrue(reopened.demoExplored.value)
             assertEquals(1, scans)
         } finally { store.clear(); runCurrent(); Dispatchers.resetMain() }
     }
@@ -46,6 +51,8 @@ class OnboardingViewModelTest {
                 override fun startScan() { scans++ }
             }
             val broken = object : OnboardingRepository {
+                override val demoExplored = flowOf(false)
+                override fun markDemoExplored() = CompletableDeferred(Unit)
                 override val introductionDismissed = flow<Boolean> { throw java.io.IOException("read failed") }
                 override fun dismissIntroduction() = CompletableDeferred<Unit>().apply { completeExceptionally(java.io.IOException("write failed")) }
             }

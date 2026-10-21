@@ -41,4 +41,26 @@ class ChartPresentationTest {
         assertTrue(summary.contains("Value axis ${axes.first} to ${axes.second}"))
     }
 
+    @Test fun `receive time positions new samples at right and moves old samples left across windows`() {
+        for (seconds in listOf(60, 300, 900)) {
+            val now = seconds * 2000L
+            assertEquals(1f, chartTimeFraction(now, now, seconds), 0f)
+            assertEquals(.5f, chartTimeFraction(now - seconds * 500L, now, seconds), 0f)
+            assertEquals(0f, chartTimeFraction(now - seconds * 1000L, now, seconds), 0f)
+            assertTrue(chartTimeFraction(now, now + 1000, seconds) < 1f)
+            val samples = listOf(NumericSample(now - seconds * 1000L - 1, 5.0, 0),
+                NumericSample(now, 6.0, 0), NumericSample(now + 1, 7.0, 0))
+            assertEquals(1, chartSeries(samples, now, seconds, 15000)!!.count)
+        }
+    }
+
+    @Test fun `new Charts default full width while copies retain explicit saved widths`() {
+        val chart = DashboardWidget("new", WidgetType.CHART, SensorSource("board", "temperature"))
+        assertEquals(2, chart.columnSpan)
+        val saved = chart.copy(columnSpan = 1)
+        assertEquals(1, saved.copy(settings = WidgetSettings(300)).columnSpan)
+        assertEquals(1, DashboardLayout(listOf(saved)).duplicateWidget("new", "copy").widgets.last().columnSpan)
+        assertEquals(1, DashboardWidget("value", WidgetType.VALUE, chart.source).columnSpan)
+    }
+
 }
