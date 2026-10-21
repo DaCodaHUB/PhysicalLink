@@ -42,7 +42,7 @@ android {
 }
 
 dependencies {
-    implementation("androidx.datastore:datastore-preferences:1.2.0")
+    implementation(libs.androidx.datastore.preferences)
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
     implementation(libs.androidx.navigation.compose)
@@ -58,10 +58,10 @@ dependencies {
     testImplementation(platform(libs.androidx.compose.bom))
     testImplementation(libs.androidx.compose.ui.test.junit4)
     testImplementation(libs.junit)
-    testImplementation("org.robolectric:robolectric:4.17")
-    testImplementation("org.mockito:mockito-core:5.18.0")
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
-    testImplementation("org.json:json:20240303")
+    testImplementation(libs.robolectric)
+    testImplementation(libs.mockito.core)
+    testImplementation(libs.coroutines.test)
+    testImplementation(libs.json)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.espresso.core)

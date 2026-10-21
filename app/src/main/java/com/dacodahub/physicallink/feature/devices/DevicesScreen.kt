@@ -3,7 +3,7 @@ package com.dacodahub.physicallink.feature.devices
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.net.Uri
+import androidx.core.net.toUri
 import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -79,7 +79,7 @@ fun DevicesScreen(onOpenDashboard: () -> Unit, onTryDemo: () -> Unit = {}, viewM
         onScan = requestScan, onStopScan = viewModel::stopScan,
         onConnect = { address -> openWhenConnected = true; viewModel.connect(address) },
         onCancel = { openWhenConnected = false; viewModel.disconnect() }, onOpenDashboard = onOpenDashboard,
-        onSettings = { context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}"))) })
+        onSettings = { context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, "package:${context.packageName}".toUri())) })
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -91,6 +91,8 @@ internal fun DevicesContent(
     onTryDemo: () -> Unit = {}, onCancel: () -> Unit = {}, onOpenDashboard: () -> Unit = {}, onSettings: () -> Unit = {},
     showIntroduction: Boolean = false, onDismissIntroduction: () -> Unit = {}
 ) {
+    var replayIntroduction by rememberSaveable { mutableStateOf(false) }
+    fun dismissIntroduction() { replayIntroduction = false; onDismissIntroduction() }
     var hasScanned by rememberSaveable { mutableStateOf(false) }
     var retrying by rememberSaveable { mutableStateOf(false) }
     var showGuide by rememberSaveable { mutableStateOf(false) }
@@ -139,14 +141,14 @@ internal fun DevicesContent(
                     }
                 }
                 item {
-                    if (showIntroduction) StatePanel("Welcome to PhysicalLink", "Connect a compatible ESP32 sensor project and turn its readings into a dashboard you can customize.") {
+                    if (showIntroduction || replayIntroduction) StatePanel("Welcome to PhysicalLink", "Connect a compatible ESP32 sensor project and turn its readings into a dashboard you can customize.") {
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Button(onClick = { onDismissIntroduction(); onTryDemo() }) { Text("Try Demo") }
-                            OutlinedButton(onClick = { onDismissIntroduction(); onScan() }, enabled = canScan) { Text("Connect a Device") }
+                            Button(onClick = { dismissIntroduction(); onTryDemo() }) { Text("Try Demo") }
+                            OutlinedButton(onClick = { dismissIntroduction(); onScan() }, enabled = canScan) { Text("Connect a Device") }
                         }
-                        TextButton(onClick = onDismissIntroduction) { Text("Not now") }
+                        TextButton(onClick = ::dismissIntroduction) { Text("Not now") }
                     } else StatePanel("Explore without hardware", "Try simulated sensors and customize a dashboard. No Bluetooth permission needed.") {
-                        FilledTonalButton(onClick = { onDismissIntroduction(); onTryDemo() }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Try Demo") }
+                        FilledTonalButton(onClick = { dismissIntroduction(); onTryDemo() }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Try Demo") }
                     }
                 }
                 if (canScan) {
@@ -185,7 +187,10 @@ internal fun DevicesContent(
             }
         }
     }
-    if (showGuide) GettingStarted(onDismiss = { showGuide = false })
+    if (showGuide) GettingStarted(onDismiss = { showGuide = false }, onReplayIntroduction = {
+        showGuide = false
+        replayIntroduction = true
+    })
     if (showDetails) {
         val address = detailsDevice?.address ?: deviceId
         val current = address == deviceId

@@ -24,7 +24,7 @@ internal val gettingStartedSections = listOf(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun GettingStarted(onDismiss: () -> Unit) {
+internal fun GettingStarted(onDismiss: () -> Unit, onReplayIntroduction: () -> Unit = {}) {
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.fillMaxWidth().fillMaxHeight(0.9f).padding(horizontal = 20.dp)) {
             Text("Getting Started", Modifier.semantics { heading() }, style = MaterialTheme.typography.titleLarge)
@@ -37,6 +37,7 @@ internal fun GettingStarted(onDismiss: () -> Unit) {
                     }
                 }
             }
+            TextButton(onClick = onReplayIntroduction, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Replay Introduction") }
             OutlinedButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp)) { Text("Close guide") }
         }
     }

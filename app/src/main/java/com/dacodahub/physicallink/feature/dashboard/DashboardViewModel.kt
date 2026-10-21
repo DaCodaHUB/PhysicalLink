@@ -70,8 +70,9 @@ class DashboardViewModel @Inject constructor(
         val ready = saved.deviceId == deviceId && saved.ready
         val state = if (ready) dashboardState(deviceId, metadata, values, saved.layout, history, now,
             connection == ConnectionState.Connected) else DashboardState()
-        state.copy(widgets = state.widgets.map { it.copy(simulated = isDemo) },
-            hiddenWidgets = state.hiddenWidgets.map { it.copy(simulated = isDemo) }, isEditing = isEditing, loadingLayout = !ready, persistenceError = saved.error ?: error?.takeIf { it.first == deviceId }?.second)
+        val presented = if (isDemo) state.copy(widgets = state.widgets.map { it.copy(simulated = true) },
+            hiddenWidgets = state.hiddenWidgets.map { it.copy(simulated = true) }) else state
+        presented.copy(isEditing = isEditing, loadingLayout = !ready, persistenceError = saved.error ?: error?.takeIf { it.first == deviceId }?.second)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DashboardState(loadingLayout = true))
 
     init {

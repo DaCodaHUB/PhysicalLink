@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.isTraversalGroup
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -15,7 +16,7 @@ internal fun WidgetContainer(
     title: String, modifier: Modifier = Modifier, status: String? = null, controls: WidgetControls? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    ElevatedCard(modifier.fillMaxWidth(), shape = MaterialTheme.shapes.large) {
+    ElevatedCard(modifier.fillMaxWidth().semantics { isTraversalGroup = true }, shape = MaterialTheme.shapes.large) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             WidgetHeader(title, controls)
             if (controls?.target == true) Text("Drop here", Modifier.semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite },

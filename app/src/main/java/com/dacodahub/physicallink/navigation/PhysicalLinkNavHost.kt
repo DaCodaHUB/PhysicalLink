@@ -1,6 +1,11 @@
 package com.dacodahub.physicallink.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.ui.Modifier
+import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.navArgument
 import androidx.navigation.compose.NavHost
@@ -16,21 +21,36 @@ private object Destinations {
 
 @Composable
 fun PhysicalLinkNavHost() {
-    val navController = rememberNavController()
-    NavHost(navController = navController, startDestination = Destinations.Devices) {
-        composable(Destinations.Devices) {
-            DevicesScreen(onOpenDashboard = {
-                navController.navigate(Destinations.Dashboard) { launchSingleTop = true }
-            }, onTryDemo = {
-                navController.navigate("${Destinations.Dashboard}?demo=true") { launchSingleTop = true }
-            })
-        }
-        composable("${Destinations.Dashboard}?demo={demo}", arguments = listOf(navArgument("demo") {
-            type = NavType.BoolType; defaultValue = false
-        })) {
-            DashboardScreen(onDevices = {
-                navController.popBackStack(Destinations.Devices, inclusive = false)
-            })
+    PhysicalLinkNavContent(rememberNavController(),
+        devices = { openDashboard, tryDemo -> DevicesScreen(onOpenDashboard = openDashboard, onTryDemo = tryDemo) },
+        dashboard = { devices -> DashboardScreen(onDevices = devices) })
+}
+
+/** Screen slots keep the real graph testable without replacing its transitions or route arguments. */
+@Composable
+internal fun PhysicalLinkNavContent(
+    navController: NavHostController,
+    devices: @Composable (() -> Unit, () -> Unit) -> Unit,
+    dashboard: @Composable (() -> Unit) -> Unit
+) {
+    // Destination fades temporarily expose their parent. Paint it outside the transition
+    // so the Android window background cannot flash through (especially in dark mode).
+    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+        NavHost(navController = navController, startDestination = Destinations.Devices) {
+            composable(Destinations.Devices) {
+                devices({
+                    navController.navigate(Destinations.Dashboard) { launchSingleTop = true }
+                }, {
+                    navController.navigate("${Destinations.Dashboard}?demo=true") { launchSingleTop = true }
+                })
+            }
+            composable("${Destinations.Dashboard}?demo={demo}", arguments = listOf(navArgument("demo") {
+                type = NavType.BoolType; defaultValue = false
+            })) {
+                dashboard({
+                    navController.popBackStack(Destinations.Devices, inclusive = false)
+                })
+            }
         }
     }
 }

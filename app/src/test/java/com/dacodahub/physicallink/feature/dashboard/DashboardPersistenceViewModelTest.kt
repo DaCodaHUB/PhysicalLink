@@ -181,6 +181,23 @@ class DashboardPersistenceViewModelTest {
         assertEquals(1, chartSeries(reading.timeline!!.samples, reading.nowMs, 60, 15000)!!.count)
     }
 
+    @Test fun `rapid live updates do not enqueue layout writes`() = runBlocking {
+        val storage = repository("no-sensor-writes")
+        var writes = 0
+        val counted = object : DashboardLayoutRepository by storage {
+            override fun update(deviceId: String, transform: (DashboardLayout?) -> DashboardLayout?): Deferred<Unit> {
+                writes++; return storage.update(deviceId, transform)
+            }
+        }
+        val devices = Devices(metadata("temperature"))
+        val dashboard = vm(devices, counted)
+        dashboard.awaitState { !it.loadingLayout && it.widgets.size == 1 }
+        repeat(1000) { devices.sensorValues.value = mapOf("temperature" to it.toString()) }
+        dashboard.awaitState { it.widgets.singleOrNull()?.value == "999" }
+        assertEquals(0, writes)
+        assertNull(storage.observe("A").first())
+    }
+
     private class Devices(metadata: DeviceCapabilities) : DeviceRepository {
         var now = 0L
         override fun monotonicNowMs() = now

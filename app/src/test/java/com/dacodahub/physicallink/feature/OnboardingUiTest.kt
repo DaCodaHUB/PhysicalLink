@@ -98,4 +98,36 @@ class OnboardingUiTest {
         compose.onNodeWithText(raw).assertExists()
         compose.onNodeWithText("Connection guidance").assertExists()
     }
+    @Test fun `replay introduction is temporary and does not require clearing persistent completion`() {
+        var dismissals = 0
+        compose.setContent { PhysicalLinkTheme(dynamicColor = false) {
+            DevicesContent(emptyList(), ConnectionState.Disconnected, ScanState.Idle, showIntroduction = false,
+                onDismissIntroduction = { dismissals++ })
+        } }
+        compose.onNodeWithText("Welcome to PhysicalLink").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Getting Started").performClick()
+        compose.onNodeWithText("Replay Introduction").performClick()
+        compose.onNodeWithText("Getting Started").assertDoesNotExist()
+        compose.onNodeWithText("Welcome to PhysicalLink").assertExists()
+        compose.onNodeWithText("Not now").performScrollTo().performClick()
+        compose.onNodeWithText("Welcome to PhysicalLink").assertDoesNotExist()
+        assertEquals(1, dismissals)
+        compose.onNodeWithContentDescription("Getting Started").performClick()
+        compose.onNodeWithText("Replay Introduction").assertExists()
+    }
+
+    @Test fun `replay state survives UI recreation but dismissed replay does not return`() {
+        val restoration = androidx.compose.ui.test.junit4.StateRestorationTester(compose)
+        restoration.setContent { PhysicalLinkTheme(dynamicColor = false) {
+            DevicesContent(emptyList(), ConnectionState.Disconnected, ScanState.Idle, showIntroduction = false)
+        } }
+        compose.onNodeWithContentDescription("Getting Started").performClick()
+        compose.onNodeWithText("Replay Introduction").performClick()
+        restoration.emulateSavedInstanceStateRestore()
+        compose.onNodeWithText("Welcome to PhysicalLink").assertExists()
+        compose.onNodeWithText("Not now").performScrollTo().performClick()
+        restoration.emulateSavedInstanceStateRestore()
+        compose.onNodeWithText("Welcome to PhysicalLink").assertDoesNotExist()
+    }
+
 }

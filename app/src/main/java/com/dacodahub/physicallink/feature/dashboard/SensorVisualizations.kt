@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Path
@@ -12,7 +13,6 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.unit.dp
-import java.util.Locale
 import com.dacodahub.physicallink.domain.model.*
 
 private fun number(value: Double, precision: Int) = formatSensorValue(value.toString(), "number", precision)
@@ -21,40 +21,48 @@ private fun number(value: Double, precision: Int) = formatSensorValue(value.toSt
 internal fun ChartWidget(state: DashboardWidgetState, controls: WidgetControls? = null) {
     val settings = state.widget.settings
     val samples = state.timeline?.samples.orEmpty()
-    val series = remember(samples, state.nowMs, settings.chartWindowSeconds, settings.staleAfterSeconds) {
-        chartSeries(samples, state.nowMs, settings.chartWindowSeconds, settings.staleAfterSeconds * 1000L)
+    val plotTime = chartRenderTime(state.nowMs, samples)
+    val series = remember(samples, plotTime, settings.chartWindowSeconds, settings.staleAfterSeconds) {
+        chartSeries(samples, plotTime, settings.chartWindowSeconds, settings.staleAfterSeconds * 1000L)
     }
-    val axisPrecision = series?.let { number(it.minimum, settings.precision) != number(it.maximum, settings.precision) } == true
-    fun axisLabel(value: Double) = if (axisPrecision) number(value, settings.precision) else String.format(Locale.getDefault(), "%.3g", value)
+    val axes = remember(series?.minimum, series?.maximum, settings.precision) {
+        series?.let { chartAxisLabels(it, settings.precision) }
+    }
     val unit = sensorUnit(state.capability?.unit.orEmpty())
     val ink = MaterialTheme.colorScheme.primary
     val grid = MaterialTheme.colorScheme.outlineVariant
     WidgetContainer(sensorName(state.widget.source.capabilityId), status = freshnessLabel(state), controls = controls) {
+        Text(chartCurrentValue(state), style = MaterialTheme.typography.titleMedium)
         if (state.capability?.type?.equals("number", true) != true) Text("A numeric sensor is required for a chart.")
         else if (series == null) Text("Waiting for numeric samples in this time window.")
         else {
-            Text("${axisLabel(series.maximum)} $unit", style = MaterialTheme.typography.labelSmall)
-            Canvas(Modifier.fillMaxWidth().height(140.dp).semantics {
-                contentDescription = "Line chart, ${series.count} samples in the last ${settings.chartWindowSeconds} seconds. Value axis ${axisLabel(series.minimum)} to ${axisLabel(series.maximum)} $unit. Gaps indicate missing updates."
-            }) {
-                repeat(3) { index ->
-                    val y = size.height * index / 2f
-                    drawLine(grid, Offset(0f, y), Offset(size.width, y), 1.dp.toPx())
-                }
-                val from = state.nowMs - settings.chartWindowSeconds * 1000L
+            Text("${axes!!.second} $unit", style = MaterialTheme.typography.labelSmall)
+            Spacer(Modifier.fillMaxWidth().height(140.dp).semantics {
+                contentDescription = chartSummary(state, series)
+            }.drawWithCache {
+                val from = plotTime - settings.chartWindowSeconds * 1000L
+                val paths = mutableListOf<Path>()
+                val dots = mutableListOf<Offset>()
                 series.segments.forEach { segment ->
-                    val points = segment.map { sample ->
-                        Offset(((sample.timeMs - from).toDouble() / (settings.chartWindowSeconds * 1000L)).toFloat().coerceIn(0f, 1f) * size.width,
-                            (1f - axisFraction(sample.value, series.minimum, series.maximum)) * size.height)
-                    }
-                    if (points.size == 1) drawCircle(ink, 3.dp.toPx(), points.first())
-                    else if (points.isNotEmpty()) {
-                        val path = Path().apply { moveTo(points.first().x, points.first().y); points.drop(1).forEach { lineTo(it.x, it.y) } }
-                        drawPath(path, ink, style = Stroke(2.dp.toPx(), cap = StrokeCap.Round))
+                    fun point(sample: NumericSample) = Offset(
+                        ((sample.timeMs - from).toDouble() / (settings.chartWindowSeconds * 1000L)).toFloat().coerceIn(0f, 1f) * size.width,
+                        (1f - axisFraction(sample.value, series.minimum, series.maximum)) * size.height)
+                    if (segment.size == 1) dots += point(segment.first())
+                    else if (segment.isNotEmpty()) paths += Path().apply {
+                        val start = point(segment.first()); moveTo(start.x, start.y)
+                        for (index in 1 until segment.size) { val next = point(segment[index]); lineTo(next.x, next.y) }
                     }
                 }
-            }
-            Text("${axisLabel(series.minimum)} $unit", style = MaterialTheme.typography.labelSmall)
+                onDrawBehind {
+                    repeat(3) { index ->
+                        val y = size.height * index / 2f
+                        drawLine(grid, Offset(0f, y), Offset(size.width, y), 1.dp.toPx())
+                    }
+                    paths.forEach { drawPath(it, ink, style = Stroke(2.dp.toPx(), cap = StrokeCap.Round)) }
+                    dots.forEach { drawCircle(ink, 3.dp.toPx(), it) }
+                }
+            })
+            Text("${axes!!.first} $unit", style = MaterialTheme.typography.labelSmall)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("-${settings.chartWindowSeconds}s", style = MaterialTheme.typography.labelSmall)
                 Text("Now", style = MaterialTheme.typography.labelSmall)
@@ -112,7 +120,7 @@ internal fun BoundedWidget(state: DashboardWidgetState, controls: WidgetControls
                         drawCircle(color, 6.dp.toPx(), Offset(left + (right - left) * range.fraction, y))
                     }
                 }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text(number(settings.minimum!!, settings.precision), style = MaterialTheme.typography.labelSmall)
                     Text(number(settings.maximum!!, settings.precision), style = MaterialTheme.typography.labelSmall)
                 }

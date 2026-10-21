@@ -23,7 +23,7 @@ internal fun WidgetHeader(title: String, controls: WidgetControls?) {
             color = MaterialTheme.colorScheme.onSurfaceVariant)
     } else {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Row(controls.dragModifier.weight(1f).heightIn(min = 48.dp).semantics {
+            Row(controls.dragModifier.weight(1f).sizeIn(minWidth = 48.dp, minHeight = 48.dp).semantics {
                 contentDescription = "Drag $title widget ${controls.index + 1}. Hold to move; configuration also provides Move up and Move down."
             }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 ActionGlyph(Glyph.DRAG, Modifier.size(20.dp))
@@ -31,7 +31,7 @@ internal fun WidgetHeader(title: String, controls: WidgetControls?) {
                     maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
             IconButton(onClick = controls.configure, enabled = controls.enabled,
-                modifier = Modifier.semantics { contentDescription = "Configure $title widget ${controls.index + 1}" }) {
+                modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp).semantics { contentDescription = "Configure $title widget ${controls.index + 1}" }) {
                 ActionGlyph(Glyph.SETTINGS)
             }
         }
