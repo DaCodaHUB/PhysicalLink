@@ -482,3 +482,28 @@ Manual acceptance still required on ESP32/current Android:
   reads/subscriptions work. Check long-running behavior and heap on hardware.
 
 No hardware execution, upload or Android verification has been performed.
+
+## Protocol v2 core codecs (Sprint 5C.2A)
+
+Transport-independent V2Codec, V2SensorState and V2Metadata components now live
+in src/. They are not used by PhysicalLink.begin() or the existing BLE backend.
+Numeric records are 20 bytes; complete state images are at most 336 bytes;
+metadata is bounded to 8192 bytes and pages to 512 bytes including the 16-byte
+header. No v2 Bluetooth services/advertising or Android changes are enabled.
+
+See [the core codec notes](../../test/protocol_v2/README.md) for API/ownership,
+clock and sequence rules, files changed, golden fixtures, buffer limits,
+specification clarifications, validation and remaining implementation work.
+
+## Experimental v2 metadata BLE transport (Sprint 5C.2B)
+
+A separate opt-in metadata-only sketch/configuration now registers v2 metadata
+READ and page-select WRITE characteristics. Default PhysicalLink.begin() and
+v1 firmware are unchanged; no state/live characteristic or notifications exist
+in this experiment. The raw NimBLE 2.5.1 binding uses actual ATT offsets and
+pinned page generations, restricted to one client and EATT disabled.
+
+See [experimental transport instructions](../../test/metadata_transport/README.md)
+for builds/uploads, UUIDs, page selection, MTU-23/larger-MTU manual tests,
+long-read evidence and limits, lifecycle tests and remaining release gates.
+No hardware verification has been performed for this transport.

@@ -82,3 +82,69 @@ endif()
 foreach(test_name IN ITEMS registration validation readings failures cleanup order)
     add_test(NAME public_api.${test_name} COMMAND physical_link_tests ${test_name})
 endforeach()
+
+add_executable(v2_core_tests
+    ../protocol_v2/test_v2.cpp
+    ../../lib/PhysicalLink/src/SensorRegistry.cpp
+    ../../lib/PhysicalLink/src/V2Codec.cpp
+    ../../lib/PhysicalLink/src/V2Metadata.cpp
+    ../../lib/PhysicalLink/src/V2SensorState.cpp)
+target_include_directories(v2_core_tests PRIVATE ../../lib/PhysicalLink/src)
+set_target_properties(v2_core_tests PROPERTIES
+    CXX_STANDARD 11 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO)
+if(MSVC)
+    target_compile_options(v2_core_tests PRIVATE /W4 /WX /utf-8 /D_CRT_SECURE_NO_WARNINGS)
+else()
+    target_compile_options(v2_core_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+endif()
+foreach(test_name IN ITEMS numeric corrupt state images metadata)
+    add_test(NAME v2.${test_name} COMMAND v2_core_tests ${test_name})
+endforeach()
+
+add_test(NAME v2.golden_fixtures
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/../protocol_v2/verify_fixtures.py
+            $<TARGET_FILE:v2_core_tests>)
+
+add_executable(metadata_transport_tests
+    ../metadata_transport/test_metadata_transport.cpp
+    ../../lib/PhysicalLink/src/SensorRegistry.cpp
+    ../../lib/PhysicalLink/src/V2Metadata.cpp
+    ../../lib/PhysicalLink/src/V2MetadataSession.cpp
+    ../../lib/PhysicalLink/src/ExperimentalV2Metadata.cpp)
+target_include_directories(metadata_transport_tests PRIVATE ../../lib/PhysicalLink/src)
+target_compile_definitions(metadata_transport_tests PRIVATE PHYSICAL_LINK_EXPERIMENTAL_V2_METADATA=1)
+set_target_properties(metadata_transport_tests PROPERTIES
+    CXX_STANDARD 11 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO)
+if(MSVC)
+    target_compile_options(metadata_transport_tests PRIVATE /W4 /WX /utf-8)
+else()
+    target_compile_options(metadata_transport_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+endif()
+foreach(test_name IN ITEMS single pinning commands lifecycle teardown)
+    add_test(NAME metadata_transport.${test_name} COMMAND metadata_transport_tests ${test_name})
+endforeach()
+add_test(NAME metadata_transport.golden_pages
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/../metadata_transport/verify_pages.py
+            $<TARGET_FILE:metadata_transport_tests>)
+
+add_executable(metadata_nimble_binding_tests
+    ../metadata_transport/test_nimble_binding.cpp
+    ../../lib/PhysicalLink/src/SensorRegistry.cpp
+    ../../lib/PhysicalLink/src/V2Metadata.cpp
+    ../../lib/PhysicalLink/src/V2MetadataSession.cpp
+    ../../lib/PhysicalLink/src/ExperimentalV2Metadata.cpp
+    ../../lib/PhysicalLink/src/ExperimentalMetadataNimBLE.cpp)
+target_include_directories(metadata_nimble_binding_tests PRIVATE
+    ../../lib/PhysicalLink/src ../metadata_transport)
+target_compile_definitions(metadata_nimble_binding_tests PRIVATE
+    PHYSICAL_LINK_EXPERIMENTAL_V2_METADATA=1 PHYSICAL_LINK_METADATA_NATIVE_DRIVER_TEST=1)
+set_target_properties(metadata_nimble_binding_tests PROPERTIES
+    CXX_STANDARD 11 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO)
+if(MSVC)
+    target_compile_options(metadata_nimble_binding_tests PRIVATE /W4 /WX /utf-8)
+else()
+    target_compile_options(metadata_nimble_binding_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+endif()
+foreach(test_name IN ITEMS startup offsets cleanup)
+    add_test(NAME metadata_binding.${test_name} COMMAND metadata_nimble_binding_tests ${test_name})
+endforeach()
