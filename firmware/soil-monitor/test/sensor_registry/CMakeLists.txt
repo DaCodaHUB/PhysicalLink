@@ -51,3 +51,34 @@ find_package(Python3 COMPONENTS Interpreter REQUIRED)
 add_test(NAME capabilities.json_roundtrip
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/verify_capabilities_json.py
             $<TARGET_FILE:capability_serializer_tests>)
+
+add_executable(legacy_ble_adapter_tests
+    test_legacy_ble_adapter.cpp
+    ../../lib/PhysicalLink/src/SensorRegistry.cpp
+    ../../lib/PhysicalLink/src/LegacyBleAdapter.cpp)
+target_include_directories(legacy_ble_adapter_tests PRIVATE ../../lib/PhysicalLink/src)
+set_target_properties(legacy_ble_adapter_tests PROPERTIES
+    CXX_STANDARD 11 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO)
+if(MSVC)
+    target_compile_options(legacy_ble_adapter_tests PRIVATE /W4 /WX /utf-8)
+else()
+    target_compile_options(legacy_ble_adapter_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+endif()
+add_test(NAME legacy_ble.profile_and_readings COMMAND legacy_ble_adapter_tests)
+
+add_executable(physical_link_tests
+    test_physical_link.cpp
+    ../../lib/PhysicalLink/src/PhysicalLink.cpp
+    ../../lib/PhysicalLink/src/SensorRegistry.cpp
+    ../../lib/PhysicalLink/src/LegacyBleAdapter.cpp)
+target_include_directories(physical_link_tests PRIVATE ../../lib/PhysicalLink/src)
+set_target_properties(physical_link_tests PROPERTIES
+    CXX_STANDARD 11 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO)
+if(MSVC)
+    target_compile_options(physical_link_tests PRIVATE /W4 /WX /utf-8)
+else()
+    target_compile_options(physical_link_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+endif()
+foreach(test_name IN ITEMS registration validation readings failures cleanup order)
+    add_test(NAME public_api.${test_name} COMMAND physical_link_tests ${test_name})
+endforeach()
