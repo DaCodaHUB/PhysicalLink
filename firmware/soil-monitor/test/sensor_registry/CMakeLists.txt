@@ -110,6 +110,8 @@ add_executable(metadata_transport_tests
     ../../lib/PhysicalLink/src/SensorRegistry.cpp
     ../../lib/PhysicalLink/src/V2Metadata.cpp
     ../../lib/PhysicalLink/src/V2MetadataSession.cpp
+    ../../lib/PhysicalLink/src/V2Codec.cpp
+    ../../lib/PhysicalLink/src/V2SensorState.cpp
     ../../lib/PhysicalLink/src/ExperimentalV2Metadata.cpp)
 target_include_directories(metadata_transport_tests PRIVATE ../../lib/PhysicalLink/src)
 target_compile_definitions(metadata_transport_tests PRIVATE PHYSICAL_LINK_EXPERIMENTAL_V2_METADATA=1)
@@ -132,6 +134,8 @@ add_executable(metadata_nimble_binding_tests
     ../../lib/PhysicalLink/src/SensorRegistry.cpp
     ../../lib/PhysicalLink/src/V2Metadata.cpp
     ../../lib/PhysicalLink/src/V2MetadataSession.cpp
+    ../../lib/PhysicalLink/src/V2Codec.cpp
+    ../../lib/PhysicalLink/src/V2SensorState.cpp
     ../../lib/PhysicalLink/src/ExperimentalV2Metadata.cpp
     ../../lib/PhysicalLink/src/ExperimentalMetadataNimBLE.cpp)
 target_include_directories(metadata_nimble_binding_tests PRIVATE
@@ -145,6 +149,25 @@ if(MSVC)
 else()
     target_compile_options(metadata_nimble_binding_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
 endif()
-foreach(test_name IN ITEMS startup offsets cleanup)
+foreach(test_name IN ITEMS startup offsets cleanup live live_rate)
     add_test(NAME metadata_binding.${test_name} COMMAND metadata_nimble_binding_tests ${test_name})
+endforeach()
+
+add_executable(v2_live_session_tests
+    ../metadata_transport/test_live_session.cpp
+    ../../lib/PhysicalLink/src/SensorRegistry.cpp
+    ../../lib/PhysicalLink/src/V2Metadata.cpp
+    ../../lib/PhysicalLink/src/V2MetadataSession.cpp
+    ../../lib/PhysicalLink/src/V2Codec.cpp
+    ../../lib/PhysicalLink/src/V2SensorState.cpp)
+target_include_directories(v2_live_session_tests PRIVATE ../../lib/PhysicalLink/src)
+set_target_properties(v2_live_session_tests PROPERTIES
+    CXX_STANDARD 11 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO)
+if(MSVC)
+    target_compile_options(v2_live_session_tests PRIVATE /W4 /WX /utf-8)
+else()
+    target_compile_options(v2_live_session_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+endif()
+foreach(test_name IN ITEMS initial consistency commands subscription pinning coalescing rate reconnect)
+    add_test(NAME v2_live.${test_name} COMMAND v2_live_session_tests ${test_name})
 endforeach()

@@ -9,8 +9,10 @@ public:
     virtual ~MetadataDriver() = default;
     virtual ExperimentalMetadata::Result start(MetadataSession&) = 0;
     virtual ExperimentalMetadata::Result poll() = 0;
+    virtual Status update(const char* id, double value, bool available) = 0;
     virtual bool stop() = 0;
 };
 MetadataDriver* createMetadataDriver();
+std::uint32_t metadataMillis(); // Backend clock, also used to initialize cache.
 } }
 #endif

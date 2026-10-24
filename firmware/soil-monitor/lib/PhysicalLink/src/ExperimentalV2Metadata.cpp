@@ -21,7 +21,7 @@ ExperimentalMetadata::Result ExperimentalMetadata::begin(const SensorRegistry& s
     if (impl_->running) return Result::AlreadyRunning;
     if (impl_->driver || owner) return Result::Busy;
     impl_->session.reset();
-    if (impl_->session.prepare(sensors, id, name, epoch) != Status::Ok) return Result::InvalidMetadata;
+    if (impl_->session.prepare(sensors, id, name, epoch, metadataMillis()) != Status::Ok) return Result::InvalidMetadata;
     impl_->driver = createMetadataDriver();
     if (!impl_->driver) return Result::OutOfMemory;
     owner = impl_;
@@ -36,6 +36,14 @@ ExperimentalMetadata::Result ExperimentalMetadata::begin(const SensorRegistry& s
 ExperimentalMetadata::Result ExperimentalMetadata::poll() {
     if (!isRunning()) return Result::NotRunning;
     return impl_->driver->poll();
+}
+Status ExperimentalMetadata::update(const char* id, double value) {
+    if (!isRunning()) return Status::NotStarted;
+    return impl_->driver->update(id, value, true);
+}
+Status ExperimentalMetadata::unavailable(const char* id) {
+    if (!isRunning()) return Status::NotStarted;
+    return impl_->driver->update(id, 0, false);
 }
 ExperimentalMetadata::Result ExperimentalMetadata::end() {
     if (!impl_) return Result::Ok;

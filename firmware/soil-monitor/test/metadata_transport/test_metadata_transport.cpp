@@ -108,6 +108,7 @@ public:
     ~Driver()override{++destroyed;bound=nullptr;}
     R start(MetadataSession& session)override{++starts;bound=&session;session.connect(7);return startWorks?R::Ok:R::StartFailed;}
     R poll()override{bound->poll();return R::Ok;}
+    Status update(const char* sensor,double value,bool available)override{return bound->update(sensor,value,available,0);}
     bool stop()override{++stops;return stopWorks;}
 };
 bool lifecycle() {
@@ -150,7 +151,7 @@ bool emit() {
     }
     return true;
 }
-namespace physical_link {namespace v2 {MetadataDriver* createMetadataDriver(){return allocate?new Driver:nullptr;}}}
+namespace physical_link {namespace v2 {MetadataDriver* createMetadataDriver(){return allocate?new Driver:nullptr;} std::uint32_t metadataMillis(){return 0;}}}
 int main(int argc,char** argv) {
     if(argc!=2)return 2;
     const std::string name=argv[1];

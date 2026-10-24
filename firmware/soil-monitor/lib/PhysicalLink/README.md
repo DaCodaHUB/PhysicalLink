@@ -507,3 +507,17 @@ See [experimental transport instructions](../../test/metadata_transport/README.m
 for builds/uploads, UUIDs, page selection, MTU-23/larger-MTU manual tests,
 long-read evidence and limits, lifecycle tests and remaining release gates.
 No hardware verification has been performed for this transport.
+
+## Experimental v2 state/live transport (Sprint 5C.2C)
+
+The opt-in experiment now adds State/Live READ + NOTIFY with a CCCD, 20-byte
+numeric notifications, subscription-gated capture commands and pinned state
+images. The experimental facade adds update(id, value) and unavailable(id).
+All calls use one owning application task; the backend samples millis under
+its lock. Existing PhysicalLink.begin() and the default v1 sketch/configuration
+retain their original behavior.
+
+See [the current live transport guide](../../test/metadata_transport/LIVE_TRANSPORT.md)
+for scheduling, lifecycle, build/test results, memory impact, synthetic example,
+exact BLE testing steps and remaining hardware release gates. No hardware
+verification was performed during Sprint 5C.2C.

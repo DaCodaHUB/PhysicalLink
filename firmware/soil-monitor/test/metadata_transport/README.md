@@ -1,5 +1,10 @@
 # Experimental metadata-only BLE transport - Sprint 5C.2B
 
+Historical Sprint 5C.2B record. The current experiment also implements State/Live;
+see [Sprint 5C.2C instructions](LIVE_TRANSPORT.md) for current behavior, validation,
+memory results and manual BLE tests. The metadata-only assertions below describe
+the earlier milestone.
+
 Status: implemented behind an explicit experimental build; source-reviewed,
 native-tested and ESP32-compiled. **No BLE capture, upload, or hardware testing
 was performed. Long-read safety is partially verified, not hardware verified.**
