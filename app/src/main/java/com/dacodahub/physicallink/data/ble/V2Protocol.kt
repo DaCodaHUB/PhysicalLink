@@ -6,6 +6,7 @@ import java.util.UUID
 object V2Protocol {
     val SERVICE: UUID = UUID.fromString("b89e2000-7c42-4f9d-9d25-8a639eab5120")
     val METADATA: UUID = UUID.fromString("b89e2001-7c42-4f9d-9d25-8a639eab5120")
+    val STATE: UUID = UUID.fromString("b89e2003-7c42-4f9d-9d25-8a639eab5120")
     val CONTROL: UUID = UUID.fromString("b89e2002-7c42-4f9d-9d25-8a639eab5120")
     fun advertisedVersion(name: String?, services: List<UUID>): Int? =
         if (SERVICE in services) 2 else if (name == "PhysicalLink Soil") 1 else null

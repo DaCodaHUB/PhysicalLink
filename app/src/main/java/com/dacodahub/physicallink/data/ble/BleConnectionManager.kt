@@ -52,6 +52,11 @@ class BleConnectionManager(
     private var gatt: BluetoothGatt? = null
     private var disconnectingGatt: BluetoothGatt? = null
     private var disconnectTimeout: Runnable? = null
+    private var live: V2LiveSession? = null
+    private var recoveryTick: Runnable? = null
+    private var lastCaptureAt = 0L
+    private val _v2Live = MutableStateFlow(com.dacodahub.physicallink.domain.model.V2LiveState())
+    val v2Live = _v2Live.asStateFlow()
     private var v2 = false
     private var transfer: V2MetadataTransfer? = null
     private var commandDeadline = 0L
@@ -94,7 +99,10 @@ class BleConnectionManager(
                 false
             }
             if (started && activeGatt != null) {
-                val operationTimeout = if (v2 && operation is GattOperation.ReadCharacteristic && (transfer?.nextPage ?: 0) > 0)
+                val commandRead = operation is GattOperation.ReadCharacteristic &&
+                    (operation.characteristicUuid == V2Protocol.STATE ||
+                        (operation.characteristicUuid == V2Protocol.METADATA && (transfer?.nextPage ?: 0) > 0))
+                val operationTimeout = if (v2 && commandRead)
                     minOf(OPERATION_TIMEOUT_MS, (commandDeadline - android.os.SystemClock.elapsedRealtime()).coerceAtLeast(1))
                 else OPERATION_TIMEOUT_MS
                 scheduleTimeout(operationTimeout) {
@@ -287,9 +295,12 @@ class BleConnectionManager(
                     v2 = true
                     val metadata = experimental.getCharacteristic(V2Protocol.METADATA)
                     val control = experimental.getCharacteristic(V2Protocol.CONTROL)
+                    val state = experimental.getCharacteristic(V2Protocol.STATE)
                     if (metadata == null || metadata.properties and BluetoothGattCharacteristic.PROPERTY_READ == 0 ||
-                        control == null || control.properties and BluetoothGattCharacteristic.PROPERTY_WRITE == 0) {
-                        endSession(ConnectionState.Error("Invalid v2 service: Metadata READ and Control WRITE with response are required. Update experimental firmware and retry."))
+                        control == null || control.properties and BluetoothGattCharacteristic.PROPERTY_WRITE == 0 ||
+                        state == null || state.properties and BluetoothGattCharacteristic.PROPERTY_READ == 0 ||
+                        state.properties and BluetoothGattCharacteristic.PROPERTY_NOTIFY == 0 || state.getDescriptor(CCCD_UUID) == null) {
+                        endSession(ConnectionState.Error("Invalid v2 service: Metadata READ, Control WRITE with response, and State/Live READ + NOTIFY + CCCD are required. Update experimental firmware and retry."))
                         return@post
                     }
                     transfer = V2MetadataTransfer()
@@ -316,7 +327,7 @@ class BleConnectionManager(
                 if (callbackGatt !== gatt || characteristic !== activeCharacteristic) return@post
                 val operation = operationQueue.current as? GattOperation.WriteControl ?: return@post
                 if (characteristic.uuid != V2Protocol.CONTROL) return@post
-                if (status == BluetoothGatt.GATT_SUCCESS) operationQueue.enqueue(listOf(GattOperation.ReadCharacteristic(V2Protocol.METADATA)))
+                if (status == BluetoothGatt.GATT_SUCCESS) operationQueue.enqueue(listOf(GattOperation.ReadCharacteristic(if (operation.value.firstOrNull() == 2.toByte()) V2Protocol.STATE else V2Protocol.METADATA)))
                 completeOperation(operation, status)
             }
         }
@@ -355,6 +366,7 @@ class BleConnectionManager(
                 if (callbackGatt !== gatt || descriptor !== activeDescriptor || descriptor.uuid != CCCD_UUID) return@post
                 val operation = operationQueue.current as? GattOperation.EnableNotifications ?: return@post
                 if (operation.characteristicUuid != descriptor.characteristic.uuid) return@post
+                if (v2 && operation.characteristicUuid == V2Protocol.STATE && status == BluetoothGatt.GATT_SUCCESS) startCapture()
                 completeOperation(operation, status)
             }
         }
@@ -368,7 +380,27 @@ class BleConnectionManager(
             val operation = operationQueue.current as? GattOperation.ReadCharacteristic ?: return@post
             if (operation.characteristicUuid != characteristic.uuid) return@post
             if (status == BluetoothGatt.GATT_SUCCESS) {
-                if (v2 && characteristic.uuid == V2Protocol.METADATA) {
+                if (v2 && characteristic.uuid == V2Protocol.STATE) {
+                    try {
+                        val session = checkNotNull(live)
+                        require(android.os.SystemClock.elapsedRealtime() < commandDeadline) { "Capture deadline exceeded; check firmware poll()" }
+                        if (!session.acceptImage(value, android.os.SystemClock.elapsedRealtime())) {
+                            completeOperation(operation, status)
+                            handler.postDelayed({
+                                if (gatt === callbackGatt && live === session) operationQueue.enqueue(listOf(GattOperation.ReadCharacteristic(V2Protocol.STATE)))
+                            }, 100)
+                            return@post
+                        }
+                        _v2Live.value = session.state
+                        setupTimeout?.let(handler::removeCallbacks)
+                        setupTimeout = null
+                        _connectionState.value = ConnectionState.Connected
+                        scheduleRecovery(callbackGatt, session)
+                    } catch (e: Exception) {
+                        endSession(ConnectionState.Error("V2 synchronization failed: ${e.message}. Reconnect to retry."))
+                        return@post
+                    }
+                } else if (v2 && characteristic.uuid == V2Protocol.METADATA) {
                     try {
                         val current = checkNotNull(transfer)
                         if (current.nextPage > 0) require(android.os.SystemClock.elapsedRealtime() < commandDeadline) { "Page selection exceeded five-second deadline; check firmware poll()" }
@@ -382,10 +414,10 @@ class BleConnectionManager(
                             return@post
                         }
                         if (current.complete) {
-                            _v2Metadata.value = current.result()
-                            setupTimeout?.let(handler::removeCallbacks)
-                            setupTimeout = null
-                            _connectionState.value = ConnectionState.Connected
+                            val manifest = current.result()
+                            _v2Metadata.value = manifest
+                            live = V2LiveSession(manifest)
+                            operationQueue.enqueue(listOf(GattOperation.EnableNotifications(V2Protocol.STATE)))
                         } else operationQueue.enqueue(listOf(GattOperation.WriteControl(current.command())))
                     } catch (e: Exception) {
                         endSession(ConnectionState.Error("Invalid v2 metadata: ${e.message}. Check experimental firmware and retry."))
@@ -449,9 +481,49 @@ class BleConnectionManager(
         callbackGatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, value: ByteArray
     ) {
         handler.post {
-            if (callbackGatt !== gatt || characteristic.service?.uuid != SERVICE_UUID) return@post
+            if (callbackGatt !== gatt) return@post
+            if (v2) {
+                if (characteristic !== callbackGatt.getService(V2Protocol.SERVICE)?.getCharacteristic(V2Protocol.STATE)) return@post
+                try {
+                    val session = live ?: return@post
+                    session.notification(value, android.os.SystemClock.elapsedRealtime())
+                    _v2Live.value = session.state
+                } catch (e: Exception) {
+                    endSession(ConnectionState.Error("Invalid v2 live record: ${e.message}. Reconnect to retry."))
+                }
+                return@post
+            }
+            if (characteristic.service?.uuid != SERVICE_UUID) return@post
             updateReading(characteristic.uuid, value)
         }
+    }
+
+    private fun startCapture() {
+        try {
+            val session = checkNotNull(live)
+            val command = session.beginCapture()
+            lastCaptureAt = android.os.SystemClock.elapsedRealtime()
+            _v2Live.value = session.state
+            operationQueue.enqueue(listOf(GattOperation.WriteControl(command)))
+        } catch (e: Exception) {
+            endSession(ConnectionState.Error("V2 capture failed: ${e.message}. Reconnect to retry."))
+        }
+    }
+
+    private fun scheduleRecovery(client: BluetoothGatt, session: V2LiveSession) {
+        recoveryTick?.let(handler::removeCallbacks)
+        val tick = object : Runnable {
+            override fun run() {
+                if (gatt !== client || live !== session) return
+                val elapsed = android.os.SystemClock.elapsedRealtime() - lastCaptureAt
+                // Coalesce gaps and prevent command storms. Periodic capture also recovers silent loss.
+                if (!session.state.capturing && operationQueue.current == null &&
+                    (elapsed >= 30_000 || (session.gap && elapsed >= 5_000))) startCapture()
+                if (gatt === client && live === session) handler.postDelayed(this, 1_000)
+            }
+        }
+        recoveryTick = tick
+        handler.postDelayed(tick, 1_000)
     }
 
     private fun updateReading(uuid: UUID, value: ByteArray) {
@@ -492,6 +564,10 @@ class BleConnectionManager(
         setupTimeout?.let(handler::removeCallbacks)
         setupTimeout = null
         transfer = null
+        recoveryTick?.let(handler::removeCallbacks)
+        recoveryTick = null
+        live = null
+        _v2Live.value = com.dacodahub.physicallink.domain.model.V2LiveState()
         v2 = false
         _v2Metadata.value = null
         operationQueue.clear()
@@ -569,6 +645,10 @@ class BleConnectionManager(
         setupTimeout?.let(handler::removeCallbacks)
         setupTimeout = null
         transfer = null
+        recoveryTick?.let(handler::removeCallbacks)
+        recoveryTick = null
+        live = null
+        _v2Live.value = com.dacodahub.physicallink.domain.model.V2LiveState()
         v2 = false
         _v2Metadata.value = null
         operationQueue.clear()

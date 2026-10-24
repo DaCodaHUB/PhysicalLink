@@ -381,6 +381,10 @@ class BleConnectionManagerTest {
         val meta = BluetoothGattCharacteristic(V2Protocol.METADATA, BluetoothGattCharacteristic.PROPERTY_READ, 0)
         val control = BluetoothGattCharacteristic(V2Protocol.CONTROL, BluetoothGattCharacteristic.PROPERTY_WRITE, 0)
         svc.addCharacteristic(meta); svc.addCharacteristic(control)
+        val state = BluetoothGattCharacteristic(V2Protocol.STATE, BluetoothGattCharacteristic.PROPERTY_READ or BluetoothGattCharacteristic.PROPERTY_NOTIFY, 0)
+        state.addDescriptor(BluetoothGattDescriptor(uuid("2902"), 0))
+        svc.addCharacteristic(state)
+        `when`(client.writeDescriptor(any(BluetoothGattDescriptor::class.java), any(ByteArray::class.java))).thenReturn(0)
         `when`(client.getService(V2Protocol.SERVICE)).thenReturn(svc)
         `when`(client.writeCharacteristic(eq(control), any(ByteArray::class.java), eq(BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT))).thenReturn(0)
         return meta to control
@@ -400,7 +404,7 @@ class BleConnectionManagerTest {
         callback.onCharacteristicRead(client, meta, v2Page("page.sixteen.0"), 0); idle()
         shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(100))
         callback.onCharacteristicRead(client, meta, v2Page("page.sixteen.1"), 0); idle()
-        assertEquals(ConnectionState.Connected, manager.connectionState.value)
+        assertEquals(ConnectionState.Discovering, manager.connectionState.value)
         assertEquals(16, manager.v2Metadata.value?.sensors?.size)
         assertNull(manager.capabilities.value)
         assertTrue(manager.sensorValues.value.isEmpty())
@@ -437,5 +441,81 @@ class BleConnectionManagerTest {
         callback.onCharacteristicRead(client, meta, v2Page("page.one.0"), 0); idle()
         assertEquals(ConnectionState.Connecting, manager.connectionState.value)
         assertNull(manager.v2Metadata.value)
+    }
+
+    private fun stateCharacteristic() = client.getService(V2Protocol.SERVICE).getCharacteristic(V2Protocol.STATE)
+    private fun subscribeV2(): Pair<BluetoothGattCharacteristic, BluetoothGattCharacteristic> {
+        val pair = v2Service(); services()
+        callback.onCharacteristicRead(client, pair.first, v2Page("page.one.0"), 0); idle()
+        assertFalse(manager.v2Live.value.synchronized)
+        verify(client, never()).writeCharacteristic(eq(pair.second), eq(byteArrayOf(2, 1, 0)), eq(BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT))
+        callback.onDescriptorWrite(client, stateCharacteristic().getDescriptor(uuid("2902")), 0); idle()
+        verify(client).writeCharacteristic(eq(pair.second), eq(byteArrayOf(2, 1, 0)), eq(BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT))
+        callback.onCharacteristicWrite(client, pair.second, 0); idle()
+        return pair
+    }
+    private fun synchronizeV2(): Pair<BluetoothGattCharacteristic, BluetoothGattCharacteristic> {
+        val pair = subscribeV2()
+        callback.onCharacteristicRead(client, stateCharacteristic(), v2Page("image.1"), 0); idle()
+        assertTrue(manager.v2Live.value.synchronized)
+        assertEquals(ConnectionState.Connected, manager.connectionState.value)
+        return pair
+    }
+    @Test fun `v2 capture waits for descriptor then polls delayed image and merges live`() {
+        subscribeV2()
+        callback.onCharacteristicRead(client, stateCharacteristic(), v2Page("image.initial"), 0); idle()
+        assertFalse(manager.v2Live.value.synchronized)
+        callback.onCharacteristicChanged(client, stateCharacteristic(), v2Page("record.valid")); idle()
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(100))
+        callback.onCharacteristicRead(client, stateCharacteristic(), v2Page("image.1"), 0); idle()
+        assertEquals(42L, manager.v2Live.value.readings.values.single().sequence)
+        assertTrue(manager.sensorValues.value.isEmpty())
+        assertNull(manager.capabilities.value)
+    }
+    @Test fun `v2 periodic recovery captures missing notifications and resets on reconnect`() {
+        val (_, control) = synchronizeV2()
+        idleFor(30)
+        verify(client).writeCharacteristic(eq(control), eq(byteArrayOf(2, 2, 0)), eq(BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT))
+        callback.onCharacteristicWrite(client, control, 0); idle()
+        val image = v2Page("image.1").also { it[2] = 2; it[20] = 7 }
+        callback.onCharacteristicRead(client, stateCharacteristic(), image, 0); idle()
+        assertEquals(7L, manager.v2Live.value.readings.values.single().sequence)
+        manager.disconnect(); idle(); assertTrue(manager.v2Live.value.readings.isEmpty())
+        clearInvocations(client)
+        synchronizeV2()
+        assertEquals(1, manager.v2Live.value.requestId)
+    }
+    @Test fun `v2 gaps coalesce into bounded recovery`() {
+        val (_, control) = synchronizeV2()
+        callback.onCharacteristicChanged(client, stateCharacteristic(), v2Page("record.valid")); idle()
+        idleFor(4)
+        verify(client, never()).writeCharacteristic(eq(control), eq(byteArrayOf(2, 2, 0)), eq(BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT))
+        idleFor(1)
+        verify(client).writeCharacteristic(eq(control), eq(byteArrayOf(2, 2, 0)), eq(BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT))
+        idleFor(6)
+        assertTrue(manager.connectionState.value is ConnectionState.Error)
+        assertTrue(manager.v2Live.value.readings.isEmpty())
+    }
+    @Test fun `v2 state epoch failure and late notification cannot change replacement session`() {
+        subscribeV2()
+        val state = stateCharacteristic()
+        callback.onCharacteristicRead(client, state, v2Page("image.1").also { it[4] = 0 }, 0); idle()
+        assertTrue(manager.connectionState.value is ConnectionState.Error)
+        assertTrue(manager.v2Live.value.readings.isEmpty())
+        nextClient = mock(BluetoothGatt::class.java); connect()
+        callback.onCharacteristicChanged(client, state, v2Page("record.valid")); idle()
+        callback.onCharacteristicRead(client, state, v2Page("image.1"), 0); idle()
+        assertEquals(ConnectionState.Connecting, manager.connectionState.value)
+        assertTrue(manager.v2Live.value.readings.isEmpty())
+    }
+    @Test fun `v2 missing CCCD is rejected without downgrade`() {
+        v2Service()
+        val svc = client.getService(V2Protocol.SERVICE)
+        val replacement = BluetoothGattService(V2Protocol.SERVICE, 0)
+        replacement.addCharacteristic(svc.getCharacteristic(V2Protocol.METADATA))
+        replacement.addCharacteristic(svc.getCharacteristic(V2Protocol.CONTROL))
+        replacement.addCharacteristic(BluetoothGattCharacteristic(V2Protocol.STATE, BluetoothGattCharacteristic.PROPERTY_READ or BluetoothGattCharacteristic.PROPERTY_NOTIFY, 0))
+        `when`(client.getService(V2Protocol.SERVICE)).thenReturn(replacement)
+        services(); assertTrue(manager.connectionState.value is ConnectionState.Error)
     }
 }

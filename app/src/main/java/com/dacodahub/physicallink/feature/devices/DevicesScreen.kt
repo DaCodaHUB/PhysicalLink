@@ -42,6 +42,7 @@ fun DevicesScreen(onOpenDashboard: () -> Unit, onTryDemo: () -> Unit = {}, viewM
     val scan by viewModel.scanState.collectAsStateWithLifecycle()
     val deviceId by viewModel.deviceId.collectAsStateWithLifecycle()
     val capabilities by viewModel.capabilities.collectAsStateWithLifecycle()
+    val live by viewModel.v2Live.collectAsStateWithLifecycle()
     val metadata by viewModel.v2Metadata.collectAsStateWithLifecycle()
     var permissionDenied by rememberSaveable { mutableStateOf(false) }
     var openWhenConnected by rememberSaveable { mutableStateOf(false) }
@@ -75,8 +76,8 @@ fun DevicesScreen(onOpenDashboard: () -> Unit, onTryDemo: () -> Unit = {}, viewM
             explainPermissions = false
             permissionLauncher.launch(permissions)
         })
-    if (metadata != null && connection == ConnectionState.Connected) {
-        V2MetadataScreen(checkNotNull(metadata), viewModel::disconnect)
+    if (metadata != null) {
+        V2MetadataScreen(checkNotNull(metadata), live, viewModel::disconnect)
         return
     }
     DevicesContent(devices, connection, scan, deviceId, capabilities, permissionDenied,
@@ -136,7 +137,7 @@ internal fun DevicesContent(
                 }
                 when {
                     connecting -> item {
-                        StatePanel(if (retrying) "Retrying connection" else "Connecting to your project", if (selected?.protocolVersion == 2) "Experimental v2 metadata retrieval in progress. Live monitoring is not available." else "This can take a moment. Keep the device nearby.", progress = true) {
+                        StatePanel(if (retrying) "Retrying connection" else "Connecting to your project", if (selected?.protocolVersion == 2) "Experimental v2 metadata retrieval and state synchronization in progress." else "This can take a moment. Keep the device nearby.", progress = true) {
                             OutlinedButton(onClick = onCancel) { Text("Cancel connection") }
                         }
                     }
