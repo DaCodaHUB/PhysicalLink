@@ -9,6 +9,7 @@ interface DeviceRepository {
     val scanState: StateFlow<ScanState>
     val devices: StateFlow<List<DiscoveredDevice>>
     val connectionState: StateFlow<ConnectionState>
+    val v2Metadata: StateFlow<V2Metadata?> get() = kotlinx.coroutines.flow.MutableStateFlow(null)
     val capabilities: StateFlow<DeviceCapabilities?>
     val sensorHistory: StateFlow<SensorHistorySnapshot>
     val sensorValues: StateFlow<Map<String, String>>

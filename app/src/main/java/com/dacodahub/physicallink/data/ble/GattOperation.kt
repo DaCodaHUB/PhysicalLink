@@ -5,6 +5,7 @@ import com.dacodahub.physicallink.domain.model.*
 import java.util.UUID
 
 sealed interface GattOperation {
+    data class WriteControl(val value: ByteArray) : GattOperation
 
     data class ReadCharacteristic(
         val characteristicUuid: UUID

@@ -375,4 +375,67 @@ class BleConnectionManagerTest {
         replaceSensor(BluetoothGattCharacteristic(uuid("5678"), properties, 0))
     }
     private fun uuid(short: String) = UUID.fromString("0000$short-0000-1000-8000-00805f9b34fb")
+
+    private fun v2Service(): Pair<BluetoothGattCharacteristic, BluetoothGattCharacteristic> {
+        val svc = BluetoothGattService(V2Protocol.SERVICE, BluetoothGattService.SERVICE_TYPE_PRIMARY)
+        val meta = BluetoothGattCharacteristic(V2Protocol.METADATA, BluetoothGattCharacteristic.PROPERTY_READ, 0)
+        val control = BluetoothGattCharacteristic(V2Protocol.CONTROL, BluetoothGattCharacteristic.PROPERTY_WRITE, 0)
+        svc.addCharacteristic(meta); svc.addCharacteristic(control)
+        `when`(client.getService(V2Protocol.SERVICE)).thenReturn(svc)
+        `when`(client.writeCharacteristic(eq(control), any(ByteArray::class.java), eq(BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT))).thenReturn(0)
+        return meta to control
+    }
+    private fun v2Page(key: String): ByteArray {
+        val fixture = org.json.JSONObject(java.io.File("../firmware/soil-monitor/test/protocol_v2/fixtures/numeric-v2.json").readText())
+        return fixture.getJSONObject("wire").getString(key).chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+    }
+    @Test fun `v2 takes precedence and only publishes complete metadata`() {
+        val (meta, control) = v2Service(); services()
+        verify(client).readCharacteristic(meta)
+        verify(client, never()).readCharacteristic(metadata)
+        callback.onCharacteristicRead(client, meta, v2Page("page.sixteen.0"), 0); idle()
+        assertNull(manager.v2Metadata.value)
+        verify(client).writeCharacteristic(eq(control), eq(byteArrayOf(1, 1)), eq(BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT))
+        callback.onCharacteristicWrite(client, control, 0); idle()
+        callback.onCharacteristicRead(client, meta, v2Page("page.sixteen.0"), 0); idle()
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(100))
+        callback.onCharacteristicRead(client, meta, v2Page("page.sixteen.1"), 0); idle()
+        assertEquals(ConnectionState.Connected, manager.connectionState.value)
+        assertEquals(16, manager.v2Metadata.value?.sensors?.size)
+        assertNull(manager.capabilities.value)
+        assertTrue(manager.sensorValues.value.isEmpty())
+    }
+    @Test fun `invalid v2 never downgrades to v1`() {
+        `when`(client.getService(V2Protocol.SERVICE)).thenReturn(BluetoothGattService(V2Protocol.SERVICE, 0))
+        services(); assertTrue(manager.connectionState.value is ConnectionState.Error)
+        verify(client, never()).readCharacteristic(metadata)
+    }
+    @Test fun `disconnect during v2 setup invalidates late read and write`() {
+        val (meta, control) = v2Service(); services()
+        callback.onCharacteristicRead(client, meta, v2Page("page.sixteen.0"), 0); idle()
+        manager.disconnect(); idle()
+        callback.onCharacteristicWrite(client, control, 0)
+        callback.onCharacteristicRead(client, meta, v2Page("page.sixteen.1"), 0); idle()
+        assertNull(manager.v2Metadata.value)
+        assertEquals(ConnectionState.Disconnected, manager.connectionState.value)
+    }
+
+    @Test fun `v2 selection read deadline is bounded`() {
+        val (meta, control) = v2Service(); services()
+        callback.onCharacteristicRead(client, meta, v2Page("page.sixteen.0"), 0); idle()
+        callback.onCharacteristicWrite(client, control, 0); idle()
+        idleFor(6)
+        assertTrue(manager.connectionState.value is ConnectionState.Error)
+        assertNull(manager.v2Metadata.value)
+    }
+    @Test fun `v2 stale callback cannot publish into newer session`() {
+        val (meta, _) = v2Service(); services()
+        manager.disconnect(); idle()
+        val replacement = mock(BluetoothGatt::class.java)
+        nextClient = replacement
+        connect()
+        callback.onCharacteristicRead(client, meta, v2Page("page.one.0"), 0); idle()
+        assertEquals(ConnectionState.Connecting, manager.connectionState.value)
+        assertNull(manager.v2Metadata.value)
+    }
 }

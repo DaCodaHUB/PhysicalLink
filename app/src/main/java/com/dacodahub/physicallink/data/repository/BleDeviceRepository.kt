@@ -53,6 +53,7 @@ class BleDeviceRepository @Inject constructor(
     override val scanState = scanner.state
     override val devices = scanner.devices
     override val connectionState = connectionManager.connectionState
+    override val v2Metadata = connectionManager.v2Metadata
     override val capabilities = connectionManager.capabilities
     override val sensorValues = connectionManager.sensorValues
 

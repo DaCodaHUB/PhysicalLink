@@ -42,13 +42,14 @@ fun DevicesScreen(onOpenDashboard: () -> Unit, onTryDemo: () -> Unit = {}, viewM
     val scan by viewModel.scanState.collectAsStateWithLifecycle()
     val deviceId by viewModel.deviceId.collectAsStateWithLifecycle()
     val capabilities by viewModel.capabilities.collectAsStateWithLifecycle()
+    val metadata by viewModel.v2Metadata.collectAsStateWithLifecycle()
     var permissionDenied by rememberSaveable { mutableStateOf(false) }
     var openWhenConnected by rememberSaveable { mutableStateOf(false) }
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { viewModel.stopScan() }
-    LaunchedEffect(connection, openWhenConnected) {
+    LaunchedEffect(connection, openWhenConnected, capabilities, metadata) {
         if (connection == ConnectionState.Connected && openWhenConnected) {
             openWhenConnected = false
-            onOpenDashboard()
+            if (capabilities != null) onOpenDashboard()
         } else if (connection is ConnectionState.Error || connection == ConnectionState.ConnectionLost) {
             openWhenConnected = false
         }
@@ -74,6 +75,10 @@ fun DevicesScreen(onOpenDashboard: () -> Unit, onTryDemo: () -> Unit = {}, viewM
             explainPermissions = false
             permissionLauncher.launch(permissions)
         })
+    if (metadata != null && connection == ConnectionState.Connected) {
+        V2MetadataScreen(checkNotNull(metadata), viewModel::disconnect)
+        return
+    }
     DevicesContent(devices, connection, scan, deviceId, capabilities, permissionDenied,
         showIntroduction = showIntroduction, demoExplored = demoExplored, onDismissIntroduction = viewModel::dismissIntroduction,
         onTryDemo = { openWhenConnected = false; viewModel.markDemoExplored(); onTryDemo() },
@@ -131,7 +136,7 @@ internal fun DevicesContent(
                 }
                 when {
                     connecting -> item {
-                        StatePanel(if (retrying) "Retrying connection" else "Connecting to your project", "This can take a moment. Keep the device nearby.", progress = true) {
+                        StatePanel(if (retrying) "Retrying connection" else "Connecting to your project", if (selected?.protocolVersion == 2) "Experimental v2 metadata retrieval in progress. Live monitoring is not available." else "This can take a moment. Keep the device nearby.", progress = true) {
                             OutlinedButton(onClick = onCancel) { Text("Cancel connection") }
                         }
                     }
@@ -157,7 +162,7 @@ internal fun DevicesContent(
                 if (canScan) {
                     if (!permissionDenied && scan !is ScanState.Error && (connection is ConnectionState.Error || connection == ConnectionState.ConnectionLost)) item {
                         StatePanel(if (connection == ConnectionState.ConnectionLost) "Project disconnected" else connectionFailureTitle(connection),
-                            connectionHelp(connection), error = true) {
+                            (connection as? ConnectionState.Error)?.message?.takeIf { it.contains("v2", true) || it.contains("Metadata", true) } ?: connectionHelp(connection), error = true) {
                             if ((connection as? ConnectionState.Error)?.message?.contains("permission", true) == true)
                                 TextButton(onClick = onSettings) { Text("Open app settings") }
                             else if (!deviceId.isNullOrBlank()) OutlinedButton(onClick = {

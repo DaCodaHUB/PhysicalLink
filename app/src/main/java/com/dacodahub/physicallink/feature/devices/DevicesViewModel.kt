@@ -43,6 +43,7 @@ class DevicesViewModel @Inject constructor(private val repository: DeviceReposit
         }
     }
     val deviceId = repository.connectedDeviceId
+    val v2Metadata = repository.v2Metadata
     val capabilities = repository.capabilities
     val scanState = repository.scanState
     val devices = repository.devices
