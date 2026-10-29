@@ -12,7 +12,7 @@ internal fun freshnessLabel(state: DashboardWidgetState): String = (if (state.si
 
 @Composable
 internal fun DashboardWidgetCard(state: DashboardWidgetState, controls: WidgetControls? = null) {
-    val title = sensorName(state.widget.source.capabilityId)
+    val title = (state.capability?.name ?: sensorName(state.widget.source.capabilityId))
     if (state.capability == null) {
         WidgetContainer(title, status = "This sensor is not currently available.", controls = controls) {
             Text("--", style = MaterialTheme.typography.headlineLarge)

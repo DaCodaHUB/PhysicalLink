@@ -39,12 +39,12 @@ class SessionSensorHistory(
         active = false; dirty = true
         publish()
     }
-    @Synchronized fun record(capability: DeviceCapability, raw: String) {
+    @Synchronized fun record(capability: DeviceCapability, raw: String, acquiredAtMs: Long = clock.nowMs()) {
         val id = device ?: return
         if (!active || capability.id.isBlank()) return
         val source = SensorSource(id, capability.id)
         val buffer = buffers[source] ?: if (buffers.size < maxSensors) Buffer().also { buffers[source] = it } else return
-        val now = clock.nowMs()
+        val now = acquiredAtMs
         val numberType = capability.type.equals("number", true)
         val numeric = raw.takeIf { numberType && it.length <= 256 }?.trim()?.toDoubleOrNull()?.takeIf { it.isFinite() }
         val valid = if (numberType) numeric != null else raw.isNotBlank()

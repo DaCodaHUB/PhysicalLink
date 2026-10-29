@@ -10,5 +10,6 @@ data class DeviceCapability(
     val id: String,
     val uuid: String,
     val unit: String,
-    val type: String
+    val type: String,
+    val name: String? = null
 )

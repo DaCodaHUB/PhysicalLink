@@ -15,7 +15,7 @@ internal fun SensorCard(capability: DeviceCapability, value: String?, controls: 
     val reading = formatSensorValue(value, capability.type, precision)
     val unit = sensorUnit(capability.unit)
     val waiting = value.isNullOrBlank()
-    WidgetContainer(sensorName(capability.id), status = freshness ?: if (waiting) "Waiting for a reading" else null, controls = controls) {
+    WidgetContainer((capability.name ?: sensorName(capability.id)), status = freshness ?: if (waiting) "Waiting for a reading" else null, controls = controls) {
         SensorReading(reading, unit, compact = controls != null, waiting = waiting, numeric = capability.type.equals("number", true))
     }
 }

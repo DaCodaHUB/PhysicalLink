@@ -33,9 +33,10 @@ class BleDeviceRepository @Inject constructor(
     override fun monotonicNowMs(): Long = SystemClock.elapsedRealtime()
     private val history = SessionSensorHistory(MonotonicClock { monotonicNowMs() })
     private val historyScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    private val connectionManager = BleConnectionManager(context, history::record, history::startSession, history::endSession)
+    private val connectionManager = BleConnectionManager(context, { capability, raw -> history.record(capability, raw) }, history::startSession, history::endSession, history::record)
     override val sensorHistory = history.state
 
+    override val dashboardDeviceId = connectionManager.dashboardDeviceId
     override val connectedDeviceId = connectionManager.deviceId
 
     init {

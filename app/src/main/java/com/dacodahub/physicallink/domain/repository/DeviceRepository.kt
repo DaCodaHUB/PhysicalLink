@@ -5,6 +5,7 @@ import kotlinx.coroutines.flow.StateFlow
 
 interface DeviceRepository {
     /** Selected session address, retained after disconnect; connectionState indicates availability. */
+    val dashboardDeviceId: StateFlow<String?> get() = connectedDeviceId
     val connectedDeviceId: StateFlow<String?>
     val scanState: StateFlow<ScanState>
     val devices: StateFlow<List<DiscoveredDevice>>

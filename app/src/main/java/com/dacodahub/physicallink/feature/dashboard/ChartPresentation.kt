@@ -29,7 +29,7 @@ internal fun chartSummary(state: DashboardWidgetState, series: ChartSeries): Str
     val unit = sensorUnit(state.capability?.unit.orEmpty())
     val trend = if (segment.size < 2 || last.timeMs <= first.timeMs) "Trend unavailable: one sample in the latest segment."
         else "Latest recorded segment ${when { last.value > first.value -> "rose"; last.value < first.value -> "fell"; else -> "was unchanged" }} from ${number(first.value)} to ${number(last.value)} $unit over ${(last.timeMs - first.timeMs) / 1000} seconds."
-    return "${sensorName(state.widget.source.capabilityId)}. Line chart, ${series.count} samples in the last ${state.widget.settings.chartWindowSeconds} seconds. Value axis ${axes.first} to ${axes.second} $unit. ${chartCurrentValue(state)}. ${freshnessLabel(state)}. $trend Gaps indicate missing updates; trend does not cross gaps."
+    return "${(state.capability?.name ?: sensorName(state.widget.source.capabilityId))}. Line chart, ${series.count} samples in the last ${state.widget.settings.chartWindowSeconds} seconds. Value axis ${axes.first} to ${axes.second} $unit. ${chartCurrentValue(state)}. ${freshnessLabel(state)}. $trend Gaps indicate missing updates; trend does not cross gaps."
 }
 
 /** Receive-time coordinates: new samples enter at the right; age moves them left. */

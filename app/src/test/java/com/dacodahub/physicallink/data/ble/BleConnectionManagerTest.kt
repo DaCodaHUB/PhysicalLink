@@ -406,7 +406,8 @@ class BleConnectionManagerTest {
         callback.onCharacteristicRead(client, meta, v2Page("page.sixteen.1"), 0); idle()
         assertEquals(ConnectionState.Discovering, manager.connectionState.value)
         assertEquals(16, manager.v2Metadata.value?.sensors?.size)
-        assertNull(manager.capabilities.value)
+        assertEquals(16, manager.capabilities.value?.capabilities?.size)
+        assertEquals("v2:${manager.v2Metadata.value!!.deviceId}", manager.dashboardDeviceId.value)
         assertTrue(manager.sensorValues.value.isEmpty())
     }
     @Test fun `invalid v2 never downgrades to v1`() {
@@ -469,8 +470,8 @@ class BleConnectionManagerTest {
         shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(100))
         callback.onCharacteristicRead(client, stateCharacteristic(), v2Page("image.1"), 0); idle()
         assertEquals(42L, manager.v2Live.value.readings.values.single().sequence)
-        assertTrue(manager.sensorValues.value.isEmpty())
-        assertNull(manager.capabilities.value)
+        assertEquals(manager.v2Live.value.readings.values.single().value.toString(), manager.sensorValues.value.values.single())
+        assertEquals(2, manager.capabilities.value?.version)
     }
     @Test fun `v2 periodic recovery captures missing notifications and resets on reconnect`() {
         val (_, control) = synchronizeV2()

@@ -21,7 +21,7 @@ internal fun AddWidgetSheet(state: DashboardState, actions: DashboardActions, on
             if (state.hiddenWidgets.isEmpty()) item { Text("No hidden widgets.") }
             itemsIndexed(state.hiddenWidgets, key = { _, item -> "hidden:${item.widget.id}" }) { index, item ->
                 TextButton(onClick = { actions.restore(item.widget.id); onDismiss() }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-                    Text("Restore ${sensorName(item.widget.source.capabilityId)} (${index + 1})")
+                    Text("Restore ${(item.capability?.name ?: sensorName(item.widget.source.capabilityId))} (${index + 1})")
                 }
             }
             item {
@@ -32,7 +32,7 @@ internal fun AddWidgetSheet(state: DashboardState, actions: DashboardActions, on
             if (state.availableSensors.isEmpty()) item { Text("No sensors available right now.") }
             items(state.availableSensors, key = { "source:${it.capabilityId}" }) { source ->
                 TextButton(onClick = { actions.add(source); onDismiss() }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-                    Text("Add ${sensorName(source.capabilityId)}")
+                    Text("Add ${(state.sensorNames[source.capabilityId] ?: sensorName(source.capabilityId))}")
                 }
             }
             item { OutlinedButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) { Text("Close") } }

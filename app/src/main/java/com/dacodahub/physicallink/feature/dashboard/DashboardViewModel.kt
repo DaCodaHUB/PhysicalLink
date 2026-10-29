@@ -38,7 +38,7 @@ class DashboardViewModel @Inject constructor(
         val ready: Boolean = false, val error: String? = null
     )
 
-    private val loaded = repository.connectedDeviceId.flatMapLatest { deviceId ->
+    private val loaded = repository.dashboardDeviceId.flatMapLatest { deviceId ->
         if (deviceId.isNullOrBlank()) flowOf(LoadedLayout(null))
         else layouts.observe(deviceId).map { LoadedLayout(deviceId, it, ready = true) }
             .onStart { emit(LoadedLayout(deviceId)) }
@@ -62,7 +62,7 @@ class DashboardViewModel @Inject constructor(
     private val ticks = flow { while (currentCoroutineContext().isActive) { emit(repository.monotonicNowMs()); delay(1000) } }
     // Read the clock on every input too: a packet can arrive between one-second ticks.
     private val presentation = combine(presentationInputs, ticks) { inputs, _ -> inputs to repository.monotonicNowMs() }
-    val dashboard = combine(repository.connectedDeviceId, capabilities, presentation, persistenceStatus, editing) {
+    val dashboard = combine(repository.dashboardDeviceId, capabilities, presentation, persistenceStatus, editing) {
             deviceId, metadata, presentationState, status, isEditing ->
         val (inputs, now) = presentationState
         val (values, history, connection) = inputs
@@ -81,7 +81,11 @@ class DashboardViewModel @Inject constructor(
             combine(loaded, capabilities, connectionState) { saved, metadata, connection -> Triple(saved, metadata, connection) }
                 .collect { (saved, metadata, connection) ->
                     val id = saved.deviceId
-                    if (id != null && id == repository.connectedDeviceId.value && saved.ready &&
+                    if (id != null && id == repository.dashboardDeviceId.value && saved.ready &&
+                        saved.layout == null && metadata?.version == 2 && connection == ConnectionState.Connected) {
+                        save(id) { current -> current ?: defaultDashboard(id, metadata) }
+                    }
+                    if (id != null && id == repository.dashboardDeviceId.value && saved.ready &&
                         saved.layout != null && metadata != null && connection == ConnectionState.Connected &&
                         saved.layout.withDiscoveredSensors(id, metadata) != saved.layout) {
                         save(id) { current -> current?.withDiscoveredSensors(id, metadata) }
@@ -97,16 +101,16 @@ class DashboardViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 result.await()
-                if (repository.connectedDeviceId.value == deviceId) saveError.value = null
+                if (repository.dashboardDeviceId.value == deviceId) saveError.value = null
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (_: Exception) {
-                if (repository.connectedDeviceId.value == deviceId) saveError.value = deviceId to "Layout could not be saved. Try your change again."
+                if (repository.dashboardDeviceId.value == deviceId) saveError.value = deviceId to "Layout could not be saved. Try your change again."
             }
         }
     }
 
     private fun edit(transform: (DashboardLayout) -> DashboardLayout) {
-        val id = repository.connectedDeviceId.value?.takeIf { it.isNotBlank() } ?: return
+        val id = repository.dashboardDeviceId.value?.takeIf { it.isNotBlank() } ?: return
         val metadata = capabilities.value
         save(id) { current ->
             val base = current ?: defaultDashboard(id, metadata)
@@ -131,20 +135,20 @@ class DashboardViewModel @Inject constructor(
         edit { it.duplicateWidget(id, newId) }
     }
     fun addWidget(source: SensorSource) {
-        if (source.deviceId != repository.connectedDeviceId.value ||
+        if (source.deviceId != repository.dashboardDeviceId.value ||
             capabilities.value?.validDashboardCapabilities()?.none { it.id == source.capabilityId } != false) return
         val id = UUID.randomUUID().toString()
         edit { it.addValueWidget(id, source) }
     }
 
     fun setLayout(layout: DashboardLayout) {
-        val id = repository.connectedDeviceId.value ?: return
+        val id = repository.dashboardDeviceId.value ?: return
         if (layout.widgets.any { it.source.deviceId != id }) return
         save(id) { layout }
     }
 
     fun resetLayout() {
-        val id = repository.connectedDeviceId.value ?: return
+        val id = repository.dashboardDeviceId.value ?: return
         save(id) { null }
     }
 

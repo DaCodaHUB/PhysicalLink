@@ -76,11 +76,13 @@ fun DevicesScreen(onOpenDashboard: () -> Unit, onTryDemo: () -> Unit = {}, viewM
             explainPermissions = false
             permissionLauncher.launch(permissions)
         })
-    if (metadata != null) {
-        V2MetadataScreen(checkNotNull(metadata), live, viewModel::disconnect)
+    var showDiagnostic by rememberSaveable { mutableStateOf(false) }
+    if (metadata != null && showDiagnostic) {
+        V2MetadataScreen(checkNotNull(metadata), live, viewModel::disconnect, { showDiagnostic = false })
         return
     }
     DevicesContent(devices, connection, scan, deviceId, capabilities, permissionDenied,
+        onDiagnostic = if (metadata != null) ({ showDiagnostic = true }) else null,
         showIntroduction = showIntroduction, demoExplored = demoExplored, onDismissIntroduction = viewModel::dismissIntroduction,
         onTryDemo = { openWhenConnected = false; viewModel.markDemoExplored(); onTryDemo() },
         onScan = requestScan, onStopScan = viewModel::stopScan,
@@ -96,6 +98,7 @@ internal fun DevicesContent(
     deviceId: String? = null, capabilities: DeviceCapabilities? = null, permissionDenied: Boolean = false,
     onScan: () -> Unit = {}, onStopScan: () -> Unit = {}, onConnect: (String) -> Unit = {},
     onTryDemo: () -> Unit = {}, onCancel: () -> Unit = {}, onOpenDashboard: () -> Unit = {}, onSettings: () -> Unit = {},
+    onDiagnostic: (() -> Unit)? = null,
     showIntroduction: Boolean = false, demoExplored: Boolean = false, onDismissIntroduction: () -> Unit = {}
 ) {
     var replayIntroduction by rememberSaveable { mutableStateOf(false) }
@@ -144,6 +147,7 @@ internal fun DevicesContent(
                     connected -> item {
                         StatePanel("Your dashboard is ready", "View your readings or customize how they are arranged.") {
                             Button(onClick = onOpenDashboard, modifier = Modifier.fillMaxWidth()) { Text("Open dashboard") }
+                            onDiagnostic?.let { TextButton(onClick = it) { Text("V2 live diagnostic") } }
                         }
                     }
                 }

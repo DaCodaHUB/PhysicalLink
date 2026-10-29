@@ -163,7 +163,7 @@ internal fun DashboardContent(
                         itemsIndexed(dashboard.widgets, key = { _, state -> state.widget.id },
                             span = { _, state -> GridItemSpan(state.widget.columnSpan.coerceIn(1, columns)) }) { index, state ->
                             val id = state.widget.id
-                            val title = sensorName(state.widget.source.capabilityId)
+                            val title = (state.capability?.name ?: sensorName(state.widget.source.capabilityId))
                             val dragging = draggingId == id
                             val target = targetId == id
                             var handleOrigin by remember(id) { mutableStateOf(Offset.Zero) }

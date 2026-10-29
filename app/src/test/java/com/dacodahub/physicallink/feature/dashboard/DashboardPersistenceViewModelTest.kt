@@ -198,6 +198,35 @@ class DashboardPersistenceViewModelTest {
         assertNull(storage.observe("A").first())
     }
 
+    @Test fun `v2 UUID layout survives changed address epoch reconnect and manifest`() = runBlocking {
+        Dispatchers.setMain(Dispatchers.Unconfined)
+        val m = V2Metadata("00112233-4455-6677-8899-aabbccddeeff", "Board", "0000000000000001",
+            listOf(V2Sensor("a", "Alpha", "u"), V2Sensor("b", "Beta", "u")))
+        val id = m.dashboardDeviceId()
+        val devices = Devices(m.dashboardCapabilities())
+        devices.switchTo(id, m.dashboardCapabilities())
+        val storage = repository("v2")
+        val dashboard = vm(devices, storage)
+        val first = dashboard.awaitState { !it.loadingLayout && it.widgets.size == 2 }
+        storage.update(id) { it }.await()
+        assertNotNull(storage.observe(id).first())
+        dashboard.duplicateWidget(first.widgets.first().widget.id)
+        dashboard.hideWidget(first.widgets.last().widget.id)
+        val saved = withTimeout(5000) { storage.observe(id).first { it?.widgets?.size == 3 && it.widgets.any { w -> w.hidden } } }!!
+        devices.disconnect()
+        devices.capabilities.value = null
+        devices.sensorValues.value = emptyMap()
+        viewModels.clear()
+        val changed = m.copy(epoch = "0000000000000002", sensors = listOf(m.sensors.first(), V2Sensor("c", "Gamma", "u")))
+        devices.switchTo(changed.dashboardDeviceId(), changed.dashboardCapabilities())
+        val restored = vm(devices, storage, "reconnected")
+        val state = restored.awaitState { !it.loadingLayout && it.widgets.size + it.hiddenWidgets.size == 4 }
+        assertTrue((state.widgets + state.hiddenWidgets).all { it.value == null })
+        val persisted = withTimeout(5000) { storage.observe(id).first { it?.widgets?.size == 4 } }!!
+        assertEquals(saved.widgets, persisted.widgets.take(3))
+        assertNull(storage.observe("AA:BB").first())
+    }
+
     private class Devices(metadata: DeviceCapabilities) : DeviceRepository {
         var now = 0L
         override fun monotonicNowMs() = now

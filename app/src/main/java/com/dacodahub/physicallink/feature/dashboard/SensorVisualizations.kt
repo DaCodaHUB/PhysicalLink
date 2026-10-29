@@ -31,7 +31,7 @@ internal fun ChartWidget(state: DashboardWidgetState, controls: WidgetControls? 
     val unit = sensorUnit(state.capability?.unit.orEmpty())
     val ink = MaterialTheme.colorScheme.primary
     val grid = MaterialTheme.colorScheme.outlineVariant
-    WidgetContainer(sensorName(state.widget.source.capabilityId), status = freshnessLabel(state), controls = controls) {
+    WidgetContainer((state.capability?.name ?: sensorName(state.widget.source.capabilityId)), status = freshnessLabel(state), controls = controls) {
         val current = state.timeline?.takeIf { it.latestValid }?.latestNumeric?.takeIf { it.isFinite() }
         if (current == null) Text("Current value unavailable", style = MaterialTheme.typography.titleMedium)
         else SensorReading(number(current, settings.precision), unit, compact = controls != null)
@@ -87,7 +87,7 @@ internal fun BoundedWidget(state: DashboardWidgetState, controls: WidgetControls
     val ink = MaterialTheme.colorScheme.primary
     val track = MaterialTheme.colorScheme.surfaceVariant
     val error = MaterialTheme.colorScheme.error
-    val title = sensorName(state.widget.source.capabilityId)
+    val title = (state.capability?.name ?: sensorName(state.widget.source.capabilityId))
     WidgetContainer(title, status = freshnessLabel(state), controls = controls) {
         when {
             state.capability?.type?.equals("number", true) != true -> Text("A numeric sensor is required for this visualization.")

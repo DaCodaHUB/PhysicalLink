@@ -3,6 +3,8 @@ package com.dacodahub.physicallink.data.ble
 import com.dacodahub.physicallink.domain.model.ConnectionState
 import com.dacodahub.physicallink.domain.model.DeviceCapabilities
 import com.dacodahub.physicallink.domain.model.DeviceCapability
+import com.dacodahub.physicallink.domain.model.dashboardDeviceId
+import com.dacodahub.physicallink.domain.model.dashboardCapabilities
 import android.Manifest
 import android.content.pm.PackageManager
 import android.annotation.SuppressLint
@@ -28,7 +30,8 @@ class BleConnectionManager(
     private val context: Context,
     private val onSensorReading: (DeviceCapability, String) -> Unit = { _, _ -> },
     private val onSessionStarted: (String) -> Unit = {},
-    private val onSessionEnded: () -> Unit = {}
+    private val onSessionEnded: () -> Unit = {},
+    private val onV2Reading: (DeviceCapability, String, Long) -> Unit = { _, _, _ -> }
 ) {
     companion object {
         private fun uuid(short: String) =
@@ -57,6 +60,9 @@ class BleConnectionManager(
     private var lastCaptureAt = 0L
     private val _v2Live = MutableStateFlow(com.dacodahub.physicallink.domain.model.V2LiveState())
     val v2Live = _v2Live.asStateFlow()
+    private var dashboardUpdates = com.dacodahub.physicallink.domain.model.V2DashboardUpdates()
+    private val _dashboardDeviceId = MutableStateFlow<String?>(null)
+    val dashboardDeviceId = _dashboardDeviceId.asStateFlow()
     private var v2 = false
     private var transfer: V2MetadataTransfer? = null
     private var commandDeadline = 0L
@@ -202,6 +208,8 @@ class BleConnectionManager(
         if (gatt != null && _deviceId.value == address) return@onMain
         endSession(ConnectionState.Disconnected)
         _deviceId.value = address
+        _dashboardDeviceId.value = null
+        dashboardUpdates = com.dacodahub.physicallink.domain.model.V2DashboardUpdates()
         _connectionState.value = ConnectionState.Connecting
         try {
             val adapter = checkNotNull(bluetoothManager?.adapter) { "Bluetooth unavailable" }
@@ -209,6 +217,7 @@ class BleConnectionManager(
             // Always post callbacks, even when delivered on main, so assignment
             // completes before a connection callback examines the session.
             val device = adapter.getRemoteDevice(address)
+            _dashboardDeviceId.value = address
             onSessionStarted(address)
             gatt = if (Build.VERSION.SDK_INT >= 37) {
                 val settings = BluetoothGattConnectionSettings.Builder()
@@ -391,7 +400,7 @@ class BleConnectionManager(
                             }, 100)
                             return@post
                         }
-                        _v2Live.value = session.state
+                        publishV2(session.state)
                         setupTimeout?.let(handler::removeCallbacks)
                         setupTimeout = null
                         _connectionState.value = ConnectionState.Connected
@@ -416,6 +425,9 @@ class BleConnectionManager(
                         if (current.complete) {
                             val manifest = current.result()
                             _v2Metadata.value = manifest
+                            _dashboardDeviceId.value = manifest.dashboardDeviceId()
+                            _capabilities.value = manifest.dashboardCapabilities()
+                            onSessionStarted(manifest.dashboardDeviceId())
                             live = V2LiveSession(manifest)
                             operationQueue.enqueue(listOf(GattOperation.EnableNotifications(V2Protocol.STATE)))
                         } else operationQueue.enqueue(listOf(GattOperation.WriteControl(current.command())))
@@ -487,7 +499,7 @@ class BleConnectionManager(
                 try {
                     val session = live ?: return@post
                     session.notification(value, android.os.SystemClock.elapsedRealtime())
-                    _v2Live.value = session.state
+                    publishV2(session.state)
                 } catch (e: Exception) {
                     endSession(ConnectionState.Error("Invalid v2 live record: ${e.message}. Reconnect to retry."))
                 }
@@ -498,12 +510,23 @@ class BleConnectionManager(
         }
     }
 
+    private fun publishV2(state: com.dacodahub.physicallink.domain.model.V2LiveState) {
+        _v2Live.value = state
+        val capabilities = _capabilities.value ?: return
+        dashboardUpdates.accept(state) { id, reading ->
+            val capability = capabilities.capabilities.firstOrNull { it.id == id } ?: return@accept
+            val raw = reading.value?.toString().orEmpty()
+            _sensorValues.value = _sensorValues.value + (id to raw)
+            onV2Reading(capability, raw, reading.receivedAtMs - (if (reading.value != null) reading.ageMs else 0))
+        }
+    }
+
     private fun startCapture() {
         try {
             val session = checkNotNull(live)
             val command = session.beginCapture()
             lastCaptureAt = android.os.SystemClock.elapsedRealtime()
-            _v2Live.value = session.state
+            publishV2(session.state)
             operationQueue.enqueue(listOf(GattOperation.WriteControl(command)))
         } catch (e: Exception) {
             endSession(ConnectionState.Error("V2 capture failed: ${e.message}. Reconnect to retry."))

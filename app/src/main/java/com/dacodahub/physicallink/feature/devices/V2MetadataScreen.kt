@@ -13,7 +13,7 @@ import androidx.compose.ui.unit.dp
 import com.dacodahub.physicallink.domain.model.V2Metadata
 
 @Composable
-internal fun V2MetadataScreen(metadata: V2Metadata, live: V2LiveState, onDisconnect: () -> Unit) {
+internal fun V2MetadataScreen(metadata: V2Metadata, live: V2LiveState, onDisconnect: () -> Unit, onBack: () -> Unit = {}) {
     var now by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
     LaunchedEffect(Unit) { while (true) { delay(1_000); now = SystemClock.elapsedRealtime() } }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -27,7 +27,8 @@ internal fun V2MetadataScreen(metadata: V2Metadata, live: V2LiveState, onDisconn
                 live.capturing -> "Refreshing state (request ${live.requestId})..."
                 else -> "State synchronized (request ${live.requestId}); live notifications enabled"
             })
-            Text("Diagnostic only. Stale means acquisition age is at least 30 seconds. No dashboard or history integration.")
+            TextButton(onClick = onBack) { Text("Back to devices") }
+            Text("Stale means acquisition age is at least 30 seconds.")
         }
         items(metadata.sensors, key = { it.id }) { sensor ->
             Card(Modifier.fillMaxWidth()) {

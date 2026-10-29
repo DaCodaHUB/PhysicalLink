@@ -20,7 +20,8 @@ data class DashboardState(
     val availableSensors: List<SensorSource> = emptyList(),
     val isEditing: Boolean = false,
     val loadingLayout: Boolean = false,
-    val persistenceError: String? = null
+    val persistenceError: String? = null,
+    val sensorNames: Map<String, String> = emptyMap()
 )
 
 /** Null configuration follows discovery; explicit configurations preserve missing sources. */
@@ -45,6 +46,7 @@ fun dashboardState(
     }
     return DashboardState(
         deviceName = capabilities?.device,
+        sensorNames = sensors.mapValues { (_, sensor) -> sensor.name ?: sensorName(sensor.id) },
         discovering = capabilities == null,
         widgets = widgets.filterNot { it.widget.hidden },
         hiddenWidgets = widgets.filter { it.widget.hidden },
