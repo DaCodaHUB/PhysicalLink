@@ -2,6 +2,15 @@ cmake_minimum_required(VERSION 3.16)
 project(PhysicalLinkSensorRegistryTests LANGUAGES CXX)
 
 enable_testing()
+add_executable(real_bme280_tests ../real_sensors/test_bme280.cpp)
+target_include_directories(real_bme280_tests PRIVATE ../real_sensors ../../examples/v2_real_sensors)
+set_target_properties(real_bme280_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO)
+if(MSVC)
+    target_compile_options(real_bme280_tests PRIVATE /W4 /WX)
+else()
+    target_compile_options(real_bme280_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+endif()
+add_test(NAME real_sensors.checked_bme280 COMMAND real_bme280_tests)
 add_executable(sensor_registry_tests
     test_sensor_registry.cpp
     ../../lib/PhysicalLink/src/SensorRegistry.cpp
