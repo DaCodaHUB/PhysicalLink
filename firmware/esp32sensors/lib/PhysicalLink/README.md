@@ -1,13 +1,30 @@
-# PhysicalLink ESP32 library
+# PhysicalLink
 
-Register 1–16 numeric sensors and connect them to the PhysicalLink Android
-dashboard. Include **PhysicalLink.h**; no maker-written BLE packets, GATT setup,
-metadata JSON, UUIDs, or session epochs are needed. The Arduino sketch owns
-GPIO/I2C, drivers, and sampling. The library has no BME280/Adafruit dependency.
+Turn 1-16 numeric ESP32 sensors into a customizable Android dashboard over BLE.
+Your sketch reads the sensors; PhysicalLink handles discovery, sensor metadata,
+unavailable readings, and live updates. **The PhysicalLink Android app is required
+for dashboard visualization.** The library does not draw a dashboard itself.
 
-## Install in an independent PlatformIO project
+This is **PhysicalLink 0.9.0 Beta**, prepared for the first public beta release.
+It has not been published. Release-readiness checks remain pending as documented
+in the repository; do not assume an unpublished registry dependency is available.
+The library package version is independent of BLE wire protocol version **2**.
 
-Use ESP32 Arduino with the validated Espressif32 platform and pinned NimBLE:
+## Supported setup
+
+Validated build target: ESP32-WROOM-32 using PlatformIO board `esp32dev`,
+`espressif32@7.1.3`, Arduino framework, and **NimBLE-Arduino exactly 2.5.1**.
+Other ESP32 variants, Arduino core versions, ESP-IDF-only projects, and Arduino
+IDE installation have not been validated. The manifest's `espressif32` category
+is not a claim that every board in that platform works.
+
+A single BLE peer and one owning application task are supported. Do not share
+an independently initialized NimBLE stack with this library.
+
+## Install from a local package
+
+Create a PlatformIO ESP32 project. Place the freshly packed
+`PhysicalLink-0.9.0.tar.gz` beside its `platformio.ini`:
 
 ```ini
 [env:esp32dev]
@@ -15,105 +32,117 @@ platform = espressif32@7.1.3
 board = esp32dev
 framework = arduino
 monitor_speed = 115200
-lib_deps = h2zero/NimBLE-Arduino@2.5.1
+lib_deps = file://PhysicalLink-0.9.0.tar.gz
 ```
 
-Copy this entire directory into the new project's `lib/PhysicalLink`. The
-explicit dependency pin installs NimBLE before PlatformIO scans private library
-sources. It also matches `library.json`'s required dependency.
+PlatformIO installs the archive and the exact NimBLE dependency declared by the
+library. No firmware-repository include paths or special build flags are needed.
+Registry installation instructions will use the confirmed owner and published
+version after release; this Beta has not been published.
 
-Alternatively package this directory (`library.json`, `README.md`, and `src/`
-at the archive root) as `PhysicalLink.zip` in your independent project and use:
+The Git repository is a monorepo: adding its root Git URL to `lib_deps` does not
+select this nested library. Use the standalone archive or, after publication,
+the owner-qualified registry dependency. Keep the existing repository layout.
 
-```ini
-[env:esp32dev]
-platform = espressif32@7.1.3
-board = esp32dev
-framework = arduino
-lib_deps = file://PhysicalLink.zip
-```
+## First dashboard: synthetic readings
 
-PlatformIO installs the archive and its declared NimBLE dependency. Both forms
-use relative/local project files, not repository-specific includes or flags.
-`test/standalone/prepare_consumer.py` prepares the second form for automated
-verification, with a copied library archive and an independent application.
-No registry publication has been performed.
-
-Start with [the basic synthetic example](../../examples/basic/main.cpp) or
-[the real-sensor example](../../examples/real_sensors/main.cpp).
-
-## Public API
+Copy [examples/basic/main.cpp](examples/basic/main.cpp) to your project's
+`src/main.cpp`. It needs no physical sensors. The complete sketch checks startup
+and update errors. The essential API is:
 
 ```cpp
+#include <Arduino.h>
 #include <PhysicalLink.h>
+
 PhysicalLink device("My Greenhouse");
-// setup():
-//   Check device.addSensor("temperature", "Temperature", "C");
-//   Check device.begin();
-// loop(), on your sampling schedule:
-//   Check device.update("temperature", yourTemperatureReading);
-//   Or device.unavailable("temperature") if acquisition failed.
-// Every loop: check device.poll().
+uint32_t lastSample = 0;
+
+void setup() {
+    Serial.begin(115200);
+    if (device.addSensor("temperature", "Temperature", "C") != PLResult::Ok ||
+        device.addSensor("humidity", "Humidity", "%") != PLResult::Ok) {
+        Serial.println("Sensor registration failed"); return;
+    }
+    Serial.printf("PhysicalLink begin: %d\n", int(device.begin()));
+}
+
+void loop() {
+    if (!device.isRunning()) { delay(1); return; }
+    if (device.poll() != PLResult::Ok) {
+        Serial.println("BLE error; stopping"); device.end(); return;
+    }
+    const uint32_t now = millis();
+    if (uint32_t(now - lastSample) >= 1000) {
+        lastSample = now;
+        // Explicit synthetic demo values. Replace these with your sensor reads.
+        const auto temperature = device.update("temperature", 20.0 + (now / 1000 % 10) * 0.1);
+        const auto humidity = device.update("humidity", 45.0 + (now / 1000 % 5));
+        if (temperature != PLResult::Ok || humidity != PLResult::Ok)
+            Serial.println("Reading rejected");
+        // For a failed sensor: device.unavailable("temperature");
+    }
+    delay(1);
+}
 ```
 
-All methods except constructor/destructor and `isRunning()` return `PLResult`.
-`Ok` means accepted, not acknowledged by Android. Check registration and startup
-before sampling; report errors through Serial as the complete examples do.
+Build with `pio run`. When you choose to flash your own board, use
+`pio run -t upload`, then `pio device monitor --baud 115200`. No upload was
+performed while preparing this Beta.
 
-| Operation | Contract |
-| --- | --- |
-| Constructor | Copies nonempty UTF-8 name, max 64 bytes; no BLE side effects |
-| `addSensor(id, name, unit)` | Copies stable metadata; allowed only while stopped; 1–16 numeric sensors |
-| `begin()` | Validates metadata, uses stable board identity and fresh epoch, starts BLE; every reading initially unavailable |
-| `update(id, double)` | Accepts finite numbers, coalesces to latest; NaN/Inf marks a known sensor unavailable and returns `InvalidValue` |
-| `unavailable(id)` | Explicit unavailable state; never republishes an old number as current |
-| `poll()` | Services pending commands and bounded live scheduler; no acquisition or radio waits |
-| `end()` | Idempotent, stops advertising/host and releases ownership; retains registration; retry `BleStopFailed` |
-| `isRunning()` | Whether updates/poll are accepted |
+Open the PhysicalLink Android app, grant its requested Bluetooth permissions,
+scan, select PhysicalLink, and connect. Open the dashboard and add Value, Gauge,
+Chart, or Range widgets. Device Diagnostics helps inspect discovered sensors.
+Synthetic values are demonstration data, not physical measurements.
 
-IDs: 1–32 ASCII bytes matching `[a-z][a-z0-9_.-]{0,31}`. Names: max 64 UTF-8
-bytes (empty/null falls back to ID). Units: max 16 UTF-8 bytes (empty/null allowed).
-Malformed UTF-8 is rejected; inputs are copied. Repeated measurement types and
-arbitrary units are allowed. No fixed sensor profile or decimal-text value limit.
+For a BME280 and soil probe, follow the packaged
+[real-sensor example](examples/real_sensors/README.md). Its helper and ESP32
+Arduino `Wire`/ADC APIs are included; no Adafruit or other sensor library is needed.
+The repository's default upload target remains the real-sensor application.
+The internal 16-sensor stress harness stays in the repository as a development
+example; it is not part of the public API examples in this package.
 
-Failures distinguish `InvalidProjectName`, `InvalidId`, `InvalidName`,
-`InvalidUnit`, `DuplicateId`, `CapacityExceeded`, `UnknownSensor`, `InvalidValue`,
-`InvalidMetadata`, `MetadataTooLarge`, `OutOfMemory`, `NotRunning`,
-`AlreadyRunning`, `Busy`, `BleStartFailed`, `BleStopFailed`, `InvalidTime`, and
-`SequenceExhausted`. Bad IDs/unknown sensors do not mutate known readings.
-Invalid time/sequence exhaustion requires `end()` then `begin()` to reset the
-session; restore fresh samples afterwards.
+## Sensor values, IDs, and identity
 
-## Identity, scheduling, and ownership
+Register **1-16 numeric sensors** before `begin()`. IDs are 1-32 ASCII bytes,
+matching `[a-z][a-z0-9_.-]{0,31}`; keep them stable across reboots and updates so
+saved widgets retain their bindings. Labels are up to 64 UTF-8 bytes. Unit labels
+are up to 16 UTF-8 bytes (for example `C`, `%`, `hPa`, `raw`, or an empty string).
+Units are labels; PhysicalLink does not convert or calibrate values.
 
-The persistent device UUID remains
-`504c0000-0000-4000-8000-<factory eFuse MAC as 12 lowercase hex digits>`.
-Keep IDs stable across updates to retain saved dashboard bindings. The existing
-advertised name is **PhysicalLink**; Android discovers by service UUID. The project
-name becomes the manifest display name.
-Protocol version stays 2. The session epoch changes on every begin/restart.
+Readings are finite double-precision numbers. Use `unavailable(id)` on acquisition
+failure; NaN/infinity also marks a known sensor unavailable and returns an error.
+A new session starts with all readings unavailable. The factory-eFuse-derived
+device UUID stays stable on the same board, even between the basic and real-sensor
+examples. Restarting the session changes its epoch, not the saved device identity.
 
-Call all methods from one application task, never ISR or concurrently. Keep
-calling poll frequently, including while disconnected. Sample on your own
-millis schedule; there is no per-sample FIFO. Acquisition time/sequence is retained
-while disconnected; reconnect uses state synchronization. At most one 20-byte
-notification attempt per 50 ms is made, with no catch-up credit. Failed sends
-remain eligible and consume the same budget. Unavailable records use the existing
-status representation. Observe the clock at least every interval shorter than
-2^31 ms. No history, Wi-Fi, cloud, or remote-control API is included.
+Call `poll()` regularly, including while disconnected. Check `PLResult` values;
+`Ok` means accepted locally, not delivery acknowledged by Android. `end()` safely
+stops BLE and keeps registrations. Retry `end()` if it returns `BleStopFailed`;
+do not assume the stack was released. See [API and lifecycle](API.md) for the
+complete contract and failure behavior.
 
-One BLE owner is allowed. Externally initialized NimBLE is reported Busy and is
-not deinitialized. Shutdown stops the host before freeing callbacks/resources.
-If host shutdown fails, ownership/storage are retained for an `end()` retry;
-destruction deliberately retains any still-live transport storage instead of
-freeing callbacks. Use explicit end to observe this failure. Heap is used for
-implementation/transport state and NimBLE; static build RAM is not total runtime
-memory use. Bounded work does not imply hard realtime guarantees.
+## Troubleshooting and limits
 
-## Developer tests
+- Cannot find the board: check power, Bluetooth permissions, and matching firmware;
+  disconnect any other client before scanning again.
+- Build fails in NimBLE: use exactly 2.5.1 and the validated platform above. The
+  backend deliberately rejects unsupported NimBLE versions.
+- No readings: check startup/update results and keep calling `poll()`. A missing
+  BME280 stays unavailable until initialization succeeds after a board restart.
+- Wrong saved widgets: keep IDs and physical board identity stable. Alternate
+  example sketches on the same board share its dashboard identity.
+- Fast sampling: latest readings coalesce; this is not a lossless data logger.
+  Live delivery is limited to 20 notification attempts per second in aggregate.
+- There is no Wi-Fi/cloud service, text sensor type, or authenticated pairing
+  implemented by this library. See the advanced guide for the BLE contract.
 
-See [firmware validation](../../README.md#validate-changes) and the
-[transport guide](../../test/metadata_transport/LIVE_TRANSPORT.md). Tests include
-arbitrary registration, 16-channel bounds, unavailable/recovery, startup/shutdown
-failure cleanup, owner exclusion, stable identity across epochs, codecs and
-unchanged binary fixture oracles. Test-only drivers do not emulate the radio.
+Builds and host tests do not prove radio reliability, ATT long-read interleaving,
+or long-run heap/stack stability. Hardware acceptance is still required before
+claiming production reliability for this Beta. See [API details](API.md) and
+[third-party notices](THIRD_PARTY_NOTICES.md).
+
+## License and maintainer
+
+MIT; copyright (c) 2026 Dang Le. See [LICENSE](LICENSE). Maintainer: Dang Le.
+Dependency licenses remain separate. The intended registry owner is `dannypov`,
+pending account creation and username confirmation; no publication has occurred.
