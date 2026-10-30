@@ -1,0 +1,9 @@
+{
+  "name": "PhysicalLink",
+  "version": "0.1.0",
+  "description": "ESP32 numeric sensors to a customizable PhysicalLink Android dashboard over BLE.",
+  "frameworks": "arduino",
+  "platforms": "espressif32",
+  "headers": "PhysicalLink.h",
+  "dependencies": { "h2zero/NimBLE-Arduino": "2.5.1" }
+}

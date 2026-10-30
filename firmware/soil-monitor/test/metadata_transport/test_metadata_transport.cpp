@@ -1,13 +1,13 @@
-#include "V2MetadataSession.h"
-#include "ExperimentalMetadataDriver.h"
+#include "MetadataSession.h"
+#include "BleDriver.h"
 #include <array>
 #include <cstdio>
 #include <cstring>
 #include <string>
 using namespace physical_link;
-using namespace physical_link::v2;
+using namespace physical_link::protocol;
 using A = MetadataSession::Access;
-using R = ExperimentalMetadata::Result;
+using R = BleTransport::Result;
 #define CHECK(x) do { if(!(x)){std::fprintf(stderr,"%d: %s\n",__LINE__,#x);return false;} }while(false)
 const char* id="710abdfc-9d05-46de-a790-7fe484816eea";
 const std::uint64_t epoch=UINT64_C(0xb398ca802d871ae0);
@@ -113,7 +113,7 @@ public:
 };
 bool lifecycle() {
     SensorRegistry empty,sensors;CHECK(registry(sensors,16));
-    ExperimentalMetadata transport;
+    BleTransport transport;
     CHECK(transport.poll()==R::NotRunning);
     CHECK(transport.begin(empty,id,"Garden",epoch)==R::InvalidMetadata && starts==0);
     allocate=false;CHECK(transport.begin(sensors,id,"Garden",epoch)==R::OutOfMemory);allocate=true;
@@ -122,7 +122,7 @@ bool lifecycle() {
     startWorks=true;
     CHECK(transport.begin(sensors,id,"Garden",epoch)==R::Ok && transport.isRunning());
     CHECK(transport.begin(sensors,id,"Garden",epoch)==R::AlreadyRunning);
-    ExperimentalMetadata other;
+    BleTransport other;
     CHECK(other.begin(sensors,id,"Garden",epoch)==R::Busy);
     const std::uint8_t command[]={1,1};CHECK(bound->command(7,command,2)==A::Ok);
     CHECK(transport.poll()==R::Ok && bound->selectedPage()==1);
@@ -136,9 +136,9 @@ bool lifecycle() {
 }
 bool teardown() {
     SensorRegistry sensors;CHECK(registry(sensors,1));
-    {ExperimentalMetadata transport;CHECK(transport.begin(sensors,id,"Garden",epoch)==R::Ok);}
+    {BleTransport transport;CHECK(transport.begin(sensors,id,"Garden",epoch)==R::Ok);}
     CHECK(stops==1 && destroyed==1 && bound==nullptr);
-    ExperimentalMetadata next;CHECK(next.begin(sensors,id,"Garden",epoch)==R::Ok);
+    BleTransport next;CHECK(next.begin(sensors,id,"Garden",epoch)==R::Ok);
     return true;
 }
 bool emit() {
@@ -151,7 +151,7 @@ bool emit() {
     }
     return true;
 }
-namespace physical_link {namespace v2 {MetadataDriver* createMetadataDriver(){return allocate?new Driver:nullptr;} std::uint32_t metadataMillis(){return 0;}}}
+namespace physical_link {namespace protocol {MetadataDriver* createMetadataDriver(){return allocate?new Driver:nullptr;} std::uint32_t metadataMillis(){return 0;}}}
 int main(int argc,char** argv) {
     if(argc!=2)return 2;
     const std::string name=argv[1];

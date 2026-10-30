@@ -1,11 +1,11 @@
-#include "V2MetadataSession.h"
+#include "MetadataSession.h"
 #include <cstdio>
 #include <cstring>
 #include <limits>
 #include <string>
 #include <vector>
 using namespace physical_link;
-using namespace physical_link::v2;
+using namespace physical_link::protocol;
 using A = MetadataSession::Access;
 using Buffer = std::array<std::uint8_t, MaxPageSize>;
 const char* deviceId = "710abdfc-9d05-46de-a790-7fe484816eea";

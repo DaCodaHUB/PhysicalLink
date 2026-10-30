@@ -44,8 +44,8 @@ class BleScanner(private val context: Context) {
                         if (activeCallback !== this) return@post
                         try {
                             val name = result.scanRecord?.deviceName ?: result.device.name
-                            val version = V2Protocol.advertisedVersion(name, result.scanRecord?.serviceUuids.orEmpty().map { it.uuid }) ?: return@post
-                            val device = DiscoveredDevice(name ?: "PhysicalLink V2", result.device.address, result.rssi, version)
+                            if (!PhysicalLinkProtocol.supports(result.scanRecord?.serviceUuids.orEmpty().map { it.uuid })) return@post
+                            val device = DiscoveredDevice(name ?: "PhysicalLink", result.device.address, result.rssi)
                             _devices.value = _devices.value.filterNot { it.address == device.address } + device
                         } catch (_: SecurityException) { finish(permissionError()) }
                     }

@@ -1,11 +1,11 @@
 #include "NimbleMetadataTestPort.h"
-#include "ExperimentalV2Metadata.h"
+#include "BleTransport.h"
 #include <cstdio>
 #include <cstdlib>
 #include <string>
 using namespace physical_link;
-using namespace physical_link::v2;
-using R=ExperimentalMetadata::Result;
+using namespace physical_link::protocol;
+using R=BleTransport::Result;
 #define CHECK(x) do {if(!(x)){std::fprintf(stderr,"%d: %s\n",__LINE__,#x);return false;}}while(false)
 namespace {
 bool initialized=false,stopWorks=true;
@@ -48,21 +48,21 @@ bool registry(SensorRegistry& sensors) {
     for(int i=0;i<16;++i)CHECK(sensors.addSensor(("sensor."+std::to_string(i)).c_str(),("Sensor "+std::to_string(i)).c_str(),"raw")==SensorRegistry::Result::Ok);
     return true;
 }
-R begin(ExperimentalMetadata& device,SensorRegistry& sensors){return device.begin(sensors,"710abdfc-9d05-46de-a790-7fe484816eea","Garden",UINT64_C(0xb398ca802d871ae0));}
+R begin(BleTransport& device,SensorRegistry& sensors){return device.begin(sensors,"710abdfc-9d05-46de-a790-7fe484816eea","Garden",UINT64_C(0xb398ca802d871ae0));}
 bool startup() {
     SensorRegistry sensors;CHECK(registry(sensors));
     {
-        initialized=true;ExperimentalMetadata device;const auto stopped=stopCount;
+        initialized=true;BleTransport device;const auto stopped=stopCount;
         CHECK(begin(device,sensors)==R::Busy && initialized && stopCount==stopped);
         initialized=false;
     }
     for(int failure=1;failure<=9;++failure) {
-        stage=0;failStage=failure;ExperimentalMetadata device;
+        stage=0;failStage=failure;BleTransport device;
         CHECK(begin(device,sensors)==R::StartFailed);
         CHECK(!device.isRunning() && !initialized && !advertising && queued==nullptr);
     }
     stage=0;failStage=0;
-    ExperimentalMetadata device;CHECK(begin(device,sensors)==R::Ok);
+    BleTransport device;CHECK(begin(device,sensors)==R::Ok);
     CHECK(deviceName=="PhysicalLink V2" && scanName==deviceName && completeName);
     CHECK(completeService && advertisingSize==21 && scanResponseSize==17);
     CHECK(advertisingSize<=31 && scanResponseSize<=31);
@@ -78,7 +78,7 @@ bool startup() {
     return true;
 }
 bool offsets() {
-    SensorRegistry sensors;CHECK(registry(sensors));ExperimentalMetadata device;CHECK(begin(device,sensors)==R::Ok);
+    SensorRegistry sensors;CHECK(registry(sensors));BleTransport device;CHECK(begin(device,sensors)==R::Ok);
     connect(7);os_mbuf initial;CHECK(read(7,0,initial)==0 && initial.bytes.size()==512);
     connect(8);CHECK(terminated==8 && !advertising);
     os_mbuf peer;CHECK(read(8,0,peer)==BLE_ATT_ERR_UNLIKELY);
@@ -106,7 +106,7 @@ bool offsets() {
     return true;
 }
 bool cleanup() {
-    SensorRegistry sensors;CHECK(registry(sensors));ExperimentalMetadata device;CHECK(begin(device,sensors)==R::Ok);
+    SensorRegistry sensors;CHECK(registry(sensors));BleTransport device;CHECK(begin(device,sensors)==R::Ok);
     connect(3);CHECK(write(3,{1,255})!=0 && device.poll()==R::Ok && queued);
     stopWorks=false;const int cleared=clearCount;
     CHECK(device.end()==R::StopFailed && clearCount==cleared && queued==nullptr);
@@ -118,7 +118,7 @@ bool cleanup() {
 }
 bool live() {
     nowMs=1000;
-    SensorRegistry sensors;CHECK(registry(sensors));ExperimentalMetadata device;
+    SensorRegistry sensors;CHECK(registry(sensors));BleTransport device;
     CHECK(device.update("sensor.0",1)==Status::NotStarted);
     CHECK(begin(device,sensors)==R::Ok);connect(7);
     CHECK(device.update("sensor.0",23.5)==Status::Ok);
@@ -176,7 +176,7 @@ bool live() {
     return true;
 }
 bool liveRate() {
-    SensorRegistry sensors;CHECK(registry(sensors));ExperimentalMetadata device;
+    SensorRegistry sensors;CHECK(registry(sensors));BleTransport device;
     CHECK(begin(device,sensors)==R::Ok);connect(7);subscribe(7,true);
     for(nowMs=0;nowMs<2000;++nowMs) {
         CHECK(device.update("sensor.0",nowMs)==Status::Ok);

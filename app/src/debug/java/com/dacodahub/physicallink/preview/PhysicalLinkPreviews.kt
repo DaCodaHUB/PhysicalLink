@@ -9,11 +9,11 @@ import com.dacodahub.physicallink.feature.dashboard.*
 import com.dacodahub.physicallink.feature.devices.DevicesContent
 
 // Metadata matches firmware/soil-monitor/src/main.cpp. All sensor readings stay null.
-private val capabilities = DeviceCapabilities(1, "PhysicalLink Soil", listOf(
-    DeviceCapability("soil", "5678", "raw", "number"),
-    DeviceCapability("temperature", "5679", "C", "number"),
-    DeviceCapability("humidity", "567a", "%", "number"),
-    DeviceCapability("pressure", "567b", "hPa", "number")
+private val capabilities = DeviceCapabilities(2, "PhysicalLink", listOf(
+    DeviceCapability("soil", "v2:soil", "raw", "number"),
+    DeviceCapability("temperature", "v2:temperature", "C", "number"),
+    DeviceCapability("humidity", "v2:humidity", "%", "number"),
+    DeviceCapability("pressure", "v2:pressure", "hPa", "number")
 ))
 private val deviceId = "preview-only"
 
@@ -71,7 +71,7 @@ private val deviceId = "preview-only"
 @Preview(name = "Devices - compact rows", showBackground = true, widthDp = 393, heightDp = 852)
 @Composable private fun DevicesFoundPreview() {
     PhysicalLinkTheme(dynamicColor = false) {
-        DevicesContent(listOf(DiscoveredDevice("PhysicalLink Soil", "preview-only", -58)),
+        DevicesContent(listOf(DiscoveredDevice("PhysicalLink", "preview-only", -58)),
             ConnectionState.Disconnected, ScanState.Idle)
     }
 }

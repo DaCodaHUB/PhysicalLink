@@ -18,32 +18,15 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.util.UUID
 
-data class SensorReadings(
-    val soil: String = "--",
-    val temperature: String = "--",
-    val humidity: String = "--",
-    val pressure: String = "--"
-)
-
 @SuppressLint("MissingPermission")
 class BleConnectionManager(
     private val context: Context,
-    private val onSensorReading: (DeviceCapability, String) -> Unit = { _, _ -> },
     private val onSessionStarted: (String) -> Unit = {},
     private val onSessionEnded: () -> Unit = {},
-    private val onV2Reading: (DeviceCapability, String, Long) -> Unit = { _, _, _ -> }
+    private val onSensorReading: (DeviceCapability, String, Long) -> Unit = { _, _, _ -> }
 ) {
     companion object {
-        private fun uuid(short: String) =
-            UUID.fromString("0000$short-0000-1000-8000-00805f9b34fb")
-
-        private val SERVICE_UUID = uuid("1234")
-        private val SOIL_UUID = uuid("5678")
-        private val TEMP_UUID = uuid("5679")
-        private val HUMIDITY_UUID = uuid("567a")
-        private val PRESSURE_UUID = uuid("567b")
-        private val CCCD_UUID = uuid("2902")
-        private val CAPABILITIES_UUID = uuid("5670")
+        private val CCCD_UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
         private const val OPERATION_TIMEOUT_MS = 5_000L
         private const val CONNECTION_TIMEOUT_MS = 30_000L
         private const val DISCONNECT_TIMEOUT_MS = 5_000L
@@ -55,34 +38,29 @@ class BleConnectionManager(
     private var gatt: BluetoothGatt? = null
     private var disconnectingGatt: BluetoothGatt? = null
     private var disconnectTimeout: Runnable? = null
-    private var live: V2LiveSession? = null
+    private var live: LiveSession? = null
     private var recoveryTick: Runnable? = null
     private var lastCaptureAt = 0L
-    private val _v2Live = MutableStateFlow(com.dacodahub.physicallink.domain.model.V2LiveState())
-    val v2Live = _v2Live.asStateFlow()
-    private var dashboardUpdates = com.dacodahub.physicallink.domain.model.V2DashboardUpdates()
+    private val _liveState = MutableStateFlow(com.dacodahub.physicallink.domain.model.LiveSensorState())
+    val liveState = _liveState.asStateFlow()
+    private var dashboardUpdates = com.dacodahub.physicallink.domain.model.DashboardUpdates()
     private val _dashboardDeviceId = MutableStateFlow<String?>(null)
     val dashboardDeviceId = _dashboardDeviceId.asStateFlow()
-    private var v2 = false
-    private var transfer: V2MetadataTransfer? = null
+    private var transfer: MetadataTransfer? = null
     private var commandDeadline = 0L
     private var setupTimeout: Runnable? = null
-    private val _v2Metadata = MutableStateFlow<com.dacodahub.physicallink.domain.model.V2Metadata?>(null)
-    val v2Metadata = _v2Metadata.asStateFlow()
+    private val _manifest = MutableStateFlow<com.dacodahub.physicallink.domain.model.SensorManifest?>(null)
+    val manifest = _manifest.asStateFlow()
     private var linkConnected = false
     private var timeoutRunnable: Runnable? = null
     private var activeCharacteristic: BluetoothGattCharacteristic? = null
     private var activeDescriptor: BluetoothGattDescriptor? = null
     private var startFailure: String? = null
-    private var pendingCapabilities: DeviceCapabilities? = null
-    private var sensorCapabilitiesByUuid = emptyMap<UUID, DeviceCapability>()
     private val _deviceId = MutableStateFlow<String?>(null)
     val deviceId = _deviceId.asStateFlow()
 
     private val _connectionState = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
     val connectionState = _connectionState.asStateFlow()
-    private val _readings = MutableStateFlow(SensorReadings())
-    val readings = _readings.asStateFlow()
     private val _capabilities = MutableStateFlow<DeviceCapabilities?>(null)
     val capabilities = _capabilities.asStateFlow()
     private val _sensorValues =
@@ -106,9 +84,9 @@ class BleConnectionManager(
             }
             if (started && activeGatt != null) {
                 val commandRead = operation is GattOperation.ReadCharacteristic &&
-                    (operation.characteristicUuid == V2Protocol.STATE ||
-                        (operation.characteristicUuid == V2Protocol.METADATA && (transfer?.nextPage ?: 0) > 0))
-                val operationTimeout = if (v2 && commandRead)
+                    (operation.characteristicUuid == PhysicalLinkProtocol.STATE ||
+                        (operation.characteristicUuid == PhysicalLinkProtocol.METADATA && (transfer?.nextPage ?: 0) > 0))
+                val operationTimeout = if (commandRead)
                     minOf(OPERATION_TIMEOUT_MS, (commandDeadline - android.os.SystemClock.elapsedRealtime()).coerceAtLeast(1))
                 else OPERATION_TIMEOUT_MS
                 scheduleTimeout(operationTimeout) {
@@ -118,16 +96,6 @@ class BleConnectionManager(
                 }
             }
             started
-        },
-        onIdle = {
-            val ready = pendingCapabilities
-            if (gatt != null && _connectionState.value == ConnectionState.Discovering && ready != null) {
-                setupTimeout?.let(handler::removeCallbacks)
-                setupTimeout = null
-                pendingCapabilities = null
-                _capabilities.value = ready
-                _connectionState.value = ConnectionState.Connected
-            }
         },
         onFailure = { operation, reason ->
             val detail = startFailure ?: reason
@@ -156,11 +124,11 @@ class BleConnectionManager(
     }
 
     private fun executeOperation(activeGatt: BluetoothGatt, operation: GattOperation): Boolean {
-        val service = checkNotNull(activeGatt.getService(if (v2) V2Protocol.SERVICE else SERVICE_UUID)) {
+        val service = checkNotNull(activeGatt.getService(PhysicalLinkProtocol.SERVICE)) {
             "PhysicalLink service not found"
         }
         val characteristicUuid = when (operation) {
-            is GattOperation.WriteControl -> V2Protocol.CONTROL
+            is GattOperation.WriteControl -> PhysicalLinkProtocol.CONTROL
             is GattOperation.ReadCharacteristic -> operation.characteristicUuid
             is GattOperation.EnableNotifications -> operation.characteristicUuid
         }
@@ -209,7 +177,7 @@ class BleConnectionManager(
         endSession(ConnectionState.Disconnected)
         _deviceId.value = address
         _dashboardDeviceId.value = null
-        dashboardUpdates = com.dacodahub.physicallink.domain.model.V2DashboardUpdates()
+        dashboardUpdates = com.dacodahub.physicallink.domain.model.DashboardUpdates()
         _connectionState.value = ConnectionState.Connecting
         try {
             val adapter = checkNotNull(bluetoothManager?.adapter) { "Bluetooth unavailable" }
@@ -299,22 +267,21 @@ class BleConnectionManager(
                     endSession(ConnectionState.Error("Service discovery failed: $status"))
                     return@post
                 }
-                val experimental = callbackGatt.getService(V2Protocol.SERVICE)
-                if (experimental != null) {
-                    v2 = true
-                    val metadata = experimental.getCharacteristic(V2Protocol.METADATA)
-                    val control = experimental.getCharacteristic(V2Protocol.CONTROL)
-                    val state = experimental.getCharacteristic(V2Protocol.STATE)
+                val service = callbackGatt.getService(PhysicalLinkProtocol.SERVICE)
+                if (service != null) {
+                    val metadata = service.getCharacteristic(PhysicalLinkProtocol.METADATA)
+                    val control = service.getCharacteristic(PhysicalLinkProtocol.CONTROL)
+                    val state = service.getCharacteristic(PhysicalLinkProtocol.STATE)
                     if (metadata == null || metadata.properties and BluetoothGattCharacteristic.PROPERTY_READ == 0 ||
                         control == null || control.properties and BluetoothGattCharacteristic.PROPERTY_WRITE == 0 ||
                         state == null || state.properties and BluetoothGattCharacteristic.PROPERTY_READ == 0 ||
                         state.properties and BluetoothGattCharacteristic.PROPERTY_NOTIFY == 0 || state.getDescriptor(CCCD_UUID) == null) {
-                        endSession(ConnectionState.Error("Invalid v2 service: Metadata READ, Control WRITE with response, and State/Live READ + NOTIFY + CCCD are required. Update experimental firmware and retry."))
+                        endSession(ConnectionState.Error("Invalid PhysicalLink service: Metadata READ, Control WRITE with response, and State/Live READ + NOTIFY + CCCD are required. Update firmware and retry."))
                         return@post
                     }
-                    transfer = V2MetadataTransfer()
+                    transfer = MetadataTransfer()
                 }
-                if (!v2 && callbackGatt.getService(SERVICE_UUID) == null) {
+                if (service == null) {
                     endSession(ConnectionState.Error("PhysicalLink service not found"))
                     return@post
                 }
@@ -326,7 +293,7 @@ class BleConnectionManager(
                 setupTimeout = deadline
                 handler.postDelayed(deadline, 120_000)
                 operationQueue.enqueue(
-                    listOf(GattOperation.ReadCharacteristic(if (v2) V2Protocol.METADATA else CAPABILITIES_UUID))
+                    listOf(GattOperation.ReadCharacteristic(PhysicalLinkProtocol.METADATA))
                 )
             }
         }
@@ -335,8 +302,8 @@ class BleConnectionManager(
             handler.post {
                 if (callbackGatt !== gatt || characteristic !== activeCharacteristic) return@post
                 val operation = operationQueue.current as? GattOperation.WriteControl ?: return@post
-                if (characteristic.uuid != V2Protocol.CONTROL) return@post
-                if (status == BluetoothGatt.GATT_SUCCESS) operationQueue.enqueue(listOf(GattOperation.ReadCharacteristic(if (operation.value.firstOrNull() == 2.toByte()) V2Protocol.STATE else V2Protocol.METADATA)))
+                if (characteristic.uuid != PhysicalLinkProtocol.CONTROL) return@post
+                if (status == BluetoothGatt.GATT_SUCCESS) operationQueue.enqueue(listOf(GattOperation.ReadCharacteristic(if (operation.value.firstOrNull() == 2.toByte()) PhysicalLinkProtocol.STATE else PhysicalLinkProtocol.METADATA)))
                 completeOperation(operation, status)
             }
         }
@@ -375,7 +342,7 @@ class BleConnectionManager(
                 if (callbackGatt !== gatt || descriptor !== activeDescriptor || descriptor.uuid != CCCD_UUID) return@post
                 val operation = operationQueue.current as? GattOperation.EnableNotifications ?: return@post
                 if (operation.characteristicUuid != descriptor.characteristic.uuid) return@post
-                if (v2 && operation.characteristicUuid == V2Protocol.STATE && status == BluetoothGatt.GATT_SUCCESS) startCapture()
+                if (operation.characteristicUuid == PhysicalLinkProtocol.STATE && status == BluetoothGatt.GATT_SUCCESS) startCapture()
                 completeOperation(operation, status)
             }
         }
@@ -389,27 +356,27 @@ class BleConnectionManager(
             val operation = operationQueue.current as? GattOperation.ReadCharacteristic ?: return@post
             if (operation.characteristicUuid != characteristic.uuid) return@post
             if (status == BluetoothGatt.GATT_SUCCESS) {
-                if (v2 && characteristic.uuid == V2Protocol.STATE) {
+                if (characteristic.uuid == PhysicalLinkProtocol.STATE) {
                     try {
                         val session = checkNotNull(live)
                         require(android.os.SystemClock.elapsedRealtime() < commandDeadline) { "Capture deadline exceeded; check firmware poll()" }
                         if (!session.acceptImage(value, android.os.SystemClock.elapsedRealtime())) {
                             completeOperation(operation, status)
                             handler.postDelayed({
-                                if (gatt === callbackGatt && live === session) operationQueue.enqueue(listOf(GattOperation.ReadCharacteristic(V2Protocol.STATE)))
+                                if (gatt === callbackGatt && live === session) operationQueue.enqueue(listOf(GattOperation.ReadCharacteristic(PhysicalLinkProtocol.STATE)))
                             }, 100)
                             return@post
                         }
-                        publishV2(session.state)
+                        publishReadings(session.state)
                         setupTimeout?.let(handler::removeCallbacks)
                         setupTimeout = null
                         _connectionState.value = ConnectionState.Connected
                         scheduleRecovery(callbackGatt, session)
                     } catch (e: Exception) {
-                        endSession(ConnectionState.Error("V2 synchronization failed: ${e.message}. Reconnect to retry."))
+                        endSession(ConnectionState.Error("State synchronization failed: ${e.message}. Reconnect to retry."))
                         return@post
                     }
-                } else if (v2 && characteristic.uuid == V2Protocol.METADATA) {
+                } else if (characteristic.uuid == PhysicalLinkProtocol.METADATA) {
                     try {
                         val current = checkNotNull(transfer)
                         if (current.nextPage > 0) require(android.os.SystemClock.elapsedRealtime() < commandDeadline) { "Page selection exceeded five-second deadline; check firmware poll()" }
@@ -418,59 +385,23 @@ class BleConnectionManager(
                             require(android.os.SystemClock.elapsedRealtime() < commandDeadline) { "Page selection timed out; check firmware poll()" }
                             completeOperation(operation, status)
                             handler.postDelayed({
-                                if (gatt === callbackGatt && transfer === current) operationQueue.enqueue(listOf(GattOperation.ReadCharacteristic(V2Protocol.METADATA)))
+                                if (gatt === callbackGatt && transfer === current) operationQueue.enqueue(listOf(GattOperation.ReadCharacteristic(PhysicalLinkProtocol.METADATA)))
                             }, 100)
                             return@post
                         }
                         if (current.complete) {
                             val manifest = current.result()
-                            _v2Metadata.value = manifest
+                            _manifest.value = manifest
                             _dashboardDeviceId.value = manifest.dashboardDeviceId()
                             _capabilities.value = manifest.dashboardCapabilities()
                             onSessionStarted(manifest.dashboardDeviceId())
-                            live = V2LiveSession(manifest)
-                            operationQueue.enqueue(listOf(GattOperation.EnableNotifications(V2Protocol.STATE)))
+                            live = LiveSession(manifest)
+                            operationQueue.enqueue(listOf(GattOperation.EnableNotifications(PhysicalLinkProtocol.STATE)))
                         } else operationQueue.enqueue(listOf(GattOperation.WriteControl(current.command())))
                     } catch (e: Exception) {
-                        endSession(ConnectionState.Error("Invalid v2 metadata: ${e.message}. Check experimental firmware and retry."))
+                        endSession(ConnectionState.Error("Invalid sensor metadata: ${e.message}. Check firmware and retry."))
                         return@post
                     }
-                } else if (characteristic.uuid == CAPABILITIES_UUID) {
-                    try {
-                        require(value.size <= DeviceCapabilitiesParser.MAX_JSON_LENGTH) { "Capability payload is too large" }
-                        val parsed = DeviceCapabilitiesParser.parse(value.decodeToString(throwOnInvalidSequence = true))
-                        val sensors = parsed.capabilities.associateBy { capabilityUuid(it.uuid) }
-                        val service = checkNotNull(callbackGatt.getService(SERVICE_UUID)) { "PhysicalLink service not found" }
-                        val operations = sensors.keys.flatMap { sensorUuid ->
-                            val sensor = checkNotNull(service.getCharacteristic(sensorUuid)) {
-                                "Sensor characteristic $sensorUuid not found"
-                            }
-                            val properties = sensor.properties
-                            val readable = properties and BluetoothGattCharacteristic.PROPERTY_READ != 0
-                            val notifiable = properties and (BluetoothGattCharacteristic.PROPERTY_NOTIFY or
-                                BluetoothGattCharacteristic.PROPERTY_INDICATE) != 0
-                            check(readable || notifiable) { "Sensor characteristic $sensorUuid cannot be read or subscribed" }
-                            buildList {
-                                if (readable) add(GattOperation.ReadCharacteristic(sensorUuid))
-                                if (notifiable) {
-                                    checkNotNull(sensor.getDescriptor(CCCD_UUID)) { "Notification descriptor missing for $sensorUuid" }
-                                    add(GattOperation.EnableNotifications(sensorUuid))
-                                }
-                            }
-                        }
-                        // Validate all metadata and GATT targets before publishing to dashboard persistence.
-                        sensorCapabilitiesByUuid = sensors
-                        pendingCapabilities = parsed
-                        operationQueue.enqueue(operations)
-                    } catch (e: Exception) {
-                        Log.e("PhysicalLink", "Invalid capability description", e)
-                        endSession(
-                            ConnectionState.Error("Invalid capability description: ${e.message ?: "unsupported metadata"}. Check device firmware and reconnect.")
-                        )
-                        return@post
-                    }
-                } else {
-                    updateReading(characteristic.uuid, value)
                 }
             }
 
@@ -494,30 +425,25 @@ class BleConnectionManager(
     ) {
         handler.post {
             if (callbackGatt !== gatt) return@post
-            if (v2) {
-                if (characteristic !== callbackGatt.getService(V2Protocol.SERVICE)?.getCharacteristic(V2Protocol.STATE)) return@post
-                try {
-                    val session = live ?: return@post
-                    session.notification(value, android.os.SystemClock.elapsedRealtime())
-                    publishV2(session.state)
-                } catch (e: Exception) {
-                    endSession(ConnectionState.Error("Invalid v2 live record: ${e.message}. Reconnect to retry."))
-                }
-                return@post
+            if (characteristic !== callbackGatt.getService(PhysicalLinkProtocol.SERVICE)?.getCharacteristic(PhysicalLinkProtocol.STATE)) return@post
+            try {
+                val session = live ?: return@post
+                session.notification(value, android.os.SystemClock.elapsedRealtime())
+                publishReadings(session.state)
+            } catch (e: Exception) {
+                endSession(ConnectionState.Error("Invalid live record: ${e.message}. Reconnect to retry."))
             }
-            if (characteristic.service?.uuid != SERVICE_UUID) return@post
-            updateReading(characteristic.uuid, value)
         }
     }
 
-    private fun publishV2(state: com.dacodahub.physicallink.domain.model.V2LiveState) {
-        _v2Live.value = state
+    private fun publishReadings(state: com.dacodahub.physicallink.domain.model.LiveSensorState) {
+        _liveState.value = state
         val capabilities = _capabilities.value ?: return
         dashboardUpdates.accept(state) { id, reading ->
             val capability = capabilities.capabilities.firstOrNull { it.id == id } ?: return@accept
             val raw = reading.value?.toString().orEmpty()
             _sensorValues.value = _sensorValues.value + (id to raw)
-            onV2Reading(capability, raw, reading.receivedAtMs - (if (reading.value != null) reading.ageMs else 0))
+            onSensorReading(capability, raw, reading.receivedAtMs - (if (reading.value != null) reading.ageMs else 0))
         }
     }
 
@@ -526,14 +452,14 @@ class BleConnectionManager(
             val session = checkNotNull(live)
             val command = session.beginCapture()
             lastCaptureAt = android.os.SystemClock.elapsedRealtime()
-            publishV2(session.state)
+            publishReadings(session.state)
             operationQueue.enqueue(listOf(GattOperation.WriteControl(command)))
         } catch (e: Exception) {
-            endSession(ConnectionState.Error("V2 capture failed: ${e.message}. Reconnect to retry."))
+            endSession(ConnectionState.Error("State capture failed: ${e.message}. Reconnect to retry."))
         }
     }
 
-    private fun scheduleRecovery(client: BluetoothGatt, session: V2LiveSession) {
+    private fun scheduleRecovery(client: BluetoothGatt, session: LiveSession) {
         recoveryTick?.let(handler::removeCallbacks)
         val tick = object : Runnable {
             override fun run() {
@@ -547,25 +473,6 @@ class BleConnectionManager(
         }
         recoveryTick = tick
         handler.postDelayed(tick, 1_000)
-    }
-
-    private fun updateReading(uuid: UUID, value: ByteArray) {
-        val text = value.toString(Charsets.UTF_8)
-
-        val capability = sensorCapabilitiesByUuid[uuid]
-
-        if (capability != null) {
-            onSensorReading(capability, text)
-            _sensorValues.value += (capability.id to text)
-        }
-
-        _readings.value = when (uuid) {
-            SOIL_UUID -> _readings.value.copy(soil = text)
-            TEMP_UUID -> _readings.value.copy(temperature = text)
-            HUMIDITY_UUID -> _readings.value.copy(humidity = text)
-            PRESSURE_UUID -> _readings.value.copy(pressure = text)
-            else -> _readings.value
-        }
     }
 
     fun clearConnectionError() = onMain {
@@ -590,9 +497,8 @@ class BleConnectionManager(
         recoveryTick?.let(handler::removeCallbacks)
         recoveryTick = null
         live = null
-        _v2Live.value = com.dacodahub.physicallink.domain.model.V2LiveState()
-        v2 = false
-        _v2Metadata.value = null
+        _liveState.value = com.dacodahub.physicallink.domain.model.LiveSensorState()
+        _manifest.value = null
         operationQueue.clear()
         activeCharacteristic = null
         activeDescriptor = null
@@ -601,11 +507,8 @@ class BleConnectionManager(
         linkConnected = false
         disconnectingGatt = oldGatt
 
-        _readings.value = SensorReadings()
         onSessionEnded()
         _sensorValues.value = emptyMap()
-        pendingCapabilities = null
-        sensorCapabilitiesByUuid = emptyMap()
         _capabilities.value = null
         _connectionState.value = ConnectionState.Disconnected
 
@@ -671,9 +574,8 @@ class BleConnectionManager(
         recoveryTick?.let(handler::removeCallbacks)
         recoveryTick = null
         live = null
-        _v2Live.value = com.dacodahub.physicallink.domain.model.V2LiveState()
-        v2 = false
-        _v2Metadata.value = null
+        _liveState.value = com.dacodahub.physicallink.domain.model.LiveSensorState()
+        _manifest.value = null
         operationQueue.clear()
         activeCharacteristic = null
         activeDescriptor = null
@@ -687,11 +589,8 @@ class BleConnectionManager(
             finally { closeGatt(oldGatt) }
         }
 
-        _readings.value = SensorReadings()
         onSessionEnded()
         _sensorValues.value = emptyMap()
-        pendingCapabilities = null
-        sensorCapabilitiesByUuid = emptyMap()
         _capabilities.value = null
         _connectionState.value = state
     }

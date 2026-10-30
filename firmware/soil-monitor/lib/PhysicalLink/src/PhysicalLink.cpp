@@ -1,13 +1,11 @@
 #include "PhysicalLink.h"
-#include "LegacyBleAdapter.h"
-#include "LegacyBleTransport.h"
-#include <cmath>
+#include "BleTransport.h"
+#include "DeviceIdentity.h"
 #include <cstring>
 #include <new>
-
 using physical_link::SensorRegistry;
-using physical_link::LegacyBleAdapter;
-using physical_link::LegacyBleTransport;
+using physical_link::protocol::BleTransport;
+using physical_link::protocol::Status;
 namespace {
 PLResult translate(SensorRegistry::Result result) {
     switch (result) {
@@ -22,110 +20,90 @@ PLResult translate(SensorRegistry::Result result) {
     }
     return PLResult::InvalidValue;
 }
-void* owner = nullptr; // Single owning application task, including all instances.
+PLResult translate(BleTransport::Result result) {
+    switch (result) {
+    case BleTransport::Result::Ok: return PLResult::Ok;
+    case BleTransport::Result::NotRunning: return PLResult::NotRunning;
+    case BleTransport::Result::AlreadyRunning: return PLResult::AlreadyRunning;
+    case BleTransport::Result::InvalidMetadata: return PLResult::InvalidMetadata;
+    case BleTransport::Result::Busy: return PLResult::Busy;
+    case BleTransport::Result::OutOfMemory: return PLResult::OutOfMemory;
+    case BleTransport::Result::StartFailed: return PLResult::BleStartFailed;
+    case BleTransport::Result::StopFailed: return PLResult::BleStopFailed;
+    }
+    return PLResult::BleStartFailed;
+}
+PLResult translate(Status result) {
+    switch (result) {
+    case Status::Ok: return PLResult::Ok;
+    case Status::NotStarted: return PLResult::NotRunning;
+    case Status::InvalidId: return PLResult::InvalidId;
+    case Status::UnknownSensor: return PLResult::UnknownSensor;
+    case Status::InvalidValue: return PLResult::InvalidValue;
+    case Status::InvalidTime: return PLResult::InvalidTime;
+    case Status::SequenceExhausted: return PLResult::SequenceExhausted;
+    case Status::MetadataTooLarge: return PLResult::MetadataTooLarge;
+    default: return PLResult::InvalidMetadata;
+    }
+}
 }
 struct PhysicalLink::Impl {
     SensorRegistry sensors;
-    LegacyBleAdapter adapter;
+    BleTransport transport;
     char projectName[65] = {};
     bool validProject = false;
-    bool running = false;
-    bool dirty[SensorRegistry::MaxSensors] = {};
-    LegacyBleTransport* transport = nullptr;
-    void mark(const char* id) {
-        for (std::size_t i = 0; i < sensors.size(); ++i)
-            if (std::strcmp(sensors.getSensorAt(i)->id, id) == 0) dirty[i] = true;
-    }
+    bool cleanupPending = false;
 };
 PhysicalLink::PhysicalLink(const char* name) : impl_(new (std::nothrow) Impl) {
-    if (!impl_ || !name) return;
-    // Reuse bounded UTF-8 validation without exposing the registry publicly.
+    if (!impl_ || !name || !name[0]) return;
     SensorRegistry validation;
-    if (name[0] && validation.addSensor("project", name, "") == SensorRegistry::Result::Ok) {
+    if (validation.addSensor("project", name, "") == SensorRegistry::Result::Ok) {
         std::memcpy(impl_->projectName, name, std::strlen(name) + 1);
         impl_->validProject = true;
     }
 }
 PhysicalLink::~PhysicalLink() {
-    // If host shutdown fails, retain transport/callback lifetime and ownership.
-    // The caller should use end() to observe/retry failure before destruction.
-    if (end() == PLResult::Ok) delete impl_;
+    // BleTransport retains live callback storage if host shutdown fails.
+    delete impl_;
 }
-bool PhysicalLink::isRunning() const { return impl_ && impl_->running; }
+bool PhysicalLink::isRunning() const { return impl_ && impl_->transport.isRunning(); }
 PLResult PhysicalLink::addSensor(const char* id, const char* name, const char* unit) {
     if (!impl_) return PLResult::OutOfMemory;
-    if (impl_->running || impl_->transport) return PLResult::Busy;
+    if (isRunning() || impl_->cleanupPending) return PLResult::Busy;
     return translate(impl_->sensors.addSensor(id, name, unit));
 }
 PLResult PhysicalLink::begin() {
     if (!impl_) return PLResult::OutOfMemory;
-    if (impl_->running) return PLResult::AlreadyRunning;
-    if (impl_->transport || owner) return PLResult::Busy;
+    if (isRunning()) return PLResult::AlreadyRunning;
+    if (impl_->cleanupPending) return PLResult::Busy;
     if (!impl_->validProject) return PLResult::InvalidProjectName;
-    char metadata[LegacyBleAdapter::AttributeLimit + 1];
-    const auto result = impl_->adapter.serialize(impl_->sensors, metadata, sizeof(metadata));
-    if (result.status == LegacyBleAdapter::Status::MetadataTooLarge) return PLResult::MetadataTooLarge;
-    if (result.status != LegacyBleAdapter::Status::Ok) return PLResult::UnsupportedProfile;
-    impl_->transport = physical_link::createLegacyBleTransport();
-    if (!impl_->transport) return PLResult::OutOfMemory;
-    owner = impl_;
-    const auto started = impl_->transport->start(impl_->sensors, metadata);
-    if (started != PLResult::Ok) {
-        if (end() != PLResult::Ok) return PLResult::BleStopFailed;
-        return started;
-    }
-    for (std::size_t i = 0; i < impl_->sensors.size(); ++i) {
-        impl_->sensors.unavailable(impl_->sensors.getSensorAt(i)->id);
-        impl_->dirty[i] = false;
-    }
-    impl_->running = true;
-    return PLResult::Ok;
+    if (impl_->sensors.size() == 0) return PLResult::InvalidMetadata;
+    char deviceId[37];
+    physical_link::boardDeviceId(deviceId);
+    const auto result = impl_->transport.begin(impl_->sensors, deviceId,
+                                              impl_->projectName, physical_link::freshEpoch());
+    impl_->cleanupPending = result == BleTransport::Result::StopFailed;
+    return translate(result);
 }
 PLResult PhysicalLink::update(const char* id, double value) {
+    if (!impl_) return PLResult::OutOfMemory;
     if (!isRunning()) return PLResult::NotRunning;
-    const auto* sensor = impl_->sensors.getSensor(id);
-    if (!sensor) return translate(impl_->sensors.update(id, value));
-    // All v1 samples must fit a notification at the minimum MTU (20 bytes).
-    bool valid = std::isfinite(value);
-    if (valid && std::strcmp(id, "soil") == 0)
-        valid = value >= 0 && value <= 4095 && std::floor(value) == value;
-    if (valid) valid = std::to_string(value).size() <= 20;
-    if (!valid) {
-        impl_->sensors.unavailable(id);
-        impl_->mark(id);
-        return PLResult::InvalidValue;
-    }
-    const auto result = translate(impl_->sensors.update(id, value));
-    if (result == PLResult::Ok) impl_->mark(id);
-    return result;
+    if (!impl_->sensors.getSensor(id)) return translate(impl_->sensors.update(id, value));
+    return translate(impl_->transport.update(id, value));
 }
 PLResult PhysicalLink::unavailable(const char* id) {
+    if (!impl_) return PLResult::OutOfMemory;
     if (!isRunning()) return PLResult::NotRunning;
-    const auto result = translate(impl_->sensors.unavailable(id));
-    if (result == PLResult::Ok) impl_->mark(id);
-    return result;
+    if (!impl_->sensors.getSensor(id)) return translate(impl_->sensors.unavailable(id));
+    return translate(impl_->transport.unavailable(id));
 }
 PLResult PhysicalLink::poll() {
-    if (!isRunning()) return PLResult::NotRunning;
-    PLResult result = PLResult::Ok;
-    for (std::size_t i = 0; i < impl_->sensors.size(); ++i) {
-        if (!impl_->dirty[i]) continue;
-        std::string text;
-        const auto status = impl_->adapter.formatReading(impl_->sensors, impl_->sensors.getSensorAt(i)->id, text);
-        if (impl_->transport->publish(i, text, status == LegacyBleAdapter::Status::Ok))
-            impl_->dirty[i] = false;
-        else result = PLResult::SendFailed;
-    }
-    return result;
+    if (!impl_) return PLResult::OutOfMemory;
+    return translate(impl_->transport.poll());
 }
 PLResult PhysicalLink::end() {
     if (!impl_) return PLResult::Ok;
-    impl_->running = false;
-    if (impl_->transport) {
-        if (!impl_->transport->stop()) return PLResult::BleStopFailed;
-        delete impl_->transport;
-        impl_->transport = nullptr;
-    }
-    if (owner == impl_) owner = nullptr;
-    return PLResult::Ok;
+    const auto result = impl_->transport.end();
+    impl_->cleanupPending = result == BleTransport::Result::StopFailed;
+    return translate(result);
 }

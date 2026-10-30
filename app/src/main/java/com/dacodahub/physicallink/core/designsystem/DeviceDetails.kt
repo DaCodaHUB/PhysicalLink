@@ -42,13 +42,13 @@ internal fun DeviceDetails(
                         DetailField("Scan diagnostics", scanState.message)
                         DetailField("Scan guidance", scanHelp(scanState.message))
                     }
-                    DetailField("Compatibility", "The current scanner lists devices advertising as PhysicalLink Soil. Connection also requires matching PhysicalLink firmware and valid sensor capabilities.")
-                    DetailField("Reading timestamps", "Local monotonic receive time; not the sensor clock. Session history is held in memory only.")
+                    DetailField("Compatibility", "The scanner finds devices advertising the PhysicalLink service. Connection requires valid sensor metadata and state synchronization.")
+                    DetailField("Reading timestamps", "Acquisition ages are mapped onto local monotonic time. Session history is held in memory only.")
                     if (capabilities != null) {
                         DetailField("Capability protocol", "Version ${capabilities.version}")
                         Text("Sensors (${capabilities.capabilities.size})", Modifier.semantics { heading() }, style = MaterialTheme.typography.titleSmall)
                         capabilities.capabilities.forEach { sensor ->
-                            DetailField(sensor.id, "UUID: ${sensor.uuid}\nType: ${sensor.type}\nUnit: ${sensor.unit.ifEmpty { "Not supplied" }}")
+                            DetailField(sensor.id, "Sensor ID: ${sensor.id}\nType: ${sensor.type}\nUnit: ${sensor.unit.ifEmpty { "Not supplied" }}")
                         }
                     } else Text("Sensor details appear after discovery.")
                 }

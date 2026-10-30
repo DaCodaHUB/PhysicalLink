@@ -2,8 +2,28 @@ cmake_minimum_required(VERSION 3.16)
 project(PhysicalLinkSensorRegistryTests LANGUAGES CXX)
 
 enable_testing()
+find_package(Python3 COMPONENTS Interpreter REQUIRED)
+add_executable(physical_link_tests
+    test_physical_link.cpp
+    ../../lib/PhysicalLink/src/PhysicalLink.cpp
+    ../../lib/PhysicalLink/src/BleTransport.cpp
+    ../../lib/PhysicalLink/src/SensorRegistry.cpp
+    ../../lib/PhysicalLink/src/ProtocolCodec.cpp
+    ../../lib/PhysicalLink/src/Metadata.cpp
+    ../../lib/PhysicalLink/src/MetadataSession.cpp
+    ../../lib/PhysicalLink/src/SensorState.cpp)
+target_include_directories(physical_link_tests PRIVATE ../../lib/PhysicalLink/src)
+set_target_properties(physical_link_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO)
+if(MSVC)
+    target_compile_options(physical_link_tests PRIVATE /W4 /WX)
+else()
+    target_compile_options(physical_link_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+endif()
+foreach(test_name IN ITEMS registration readings lifecycle failures identity)
+    add_test(NAME public_api.${test_name} COMMAND physical_link_tests ${test_name})
+endforeach()
 add_executable(real_bme280_tests ../real_sensors/test_bme280.cpp)
-target_include_directories(real_bme280_tests PRIVATE ../real_sensors ../../examples/v2_real_sensors)
+target_include_directories(real_bme280_tests PRIVATE ../real_sensors ../../examples/real_sensors)
 set_target_properties(real_bme280_tests PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO)
 if(MSVC)
     target_compile_options(real_bme280_tests PRIVATE /W4 /WX)
@@ -34,96 +54,37 @@ foreach(test_name IN ITEMS
     add_test(NAME registry.${test_name} COMMAND sensor_registry_tests ${test_name})
 endforeach()
 
-add_executable(capability_serializer_tests
-    test_capability_serializer.cpp
-    ../../lib/PhysicalLink/src/SensorRegistry.cpp
-    ../../lib/PhysicalLink/src/CapabilitySerializer.cpp
-)
-target_include_directories(capability_serializer_tests PRIVATE ../../lib/PhysicalLink/src)
-set_target_properties(capability_serializer_tests PROPERTIES
-    CXX_STANDARD 11 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO
-)
-if(MSVC)
-    target_compile_options(capability_serializer_tests PRIVATE /W4 /WX /utf-8)
-else()
-    target_compile_options(capability_serializer_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
-endif()
-foreach(test_name IN ITEMS
-    empty one_sensor multiple_order escaping control_characters max_sensors
-    max_fields capacity_boundaries invalid_buffers determinism preservation
-    registry_access)
-    add_test(NAME capabilities.${test_name} COMMAND capability_serializer_tests ${test_name})
-endforeach()
-
-# Test-only standard-library JSON parser; no firmware dependency.
-find_package(Python3 COMPONENTS Interpreter REQUIRED)
-add_test(NAME capabilities.json_roundtrip
-    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/verify_capabilities_json.py
-            $<TARGET_FILE:capability_serializer_tests>)
-
-add_executable(legacy_ble_adapter_tests
-    test_legacy_ble_adapter.cpp
-    ../../lib/PhysicalLink/src/SensorRegistry.cpp
-    ../../lib/PhysicalLink/src/LegacyBleAdapter.cpp)
-target_include_directories(legacy_ble_adapter_tests PRIVATE ../../lib/PhysicalLink/src)
-set_target_properties(legacy_ble_adapter_tests PROPERTIES
-    CXX_STANDARD 11 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO)
-if(MSVC)
-    target_compile_options(legacy_ble_adapter_tests PRIVATE /W4 /WX /utf-8)
-else()
-    target_compile_options(legacy_ble_adapter_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
-endif()
-add_test(NAME legacy_ble.profile_and_readings COMMAND legacy_ble_adapter_tests)
-
-add_executable(physical_link_tests
-    test_physical_link.cpp
-    ../../lib/PhysicalLink/src/PhysicalLink.cpp
-    ../../lib/PhysicalLink/src/SensorRegistry.cpp
-    ../../lib/PhysicalLink/src/LegacyBleAdapter.cpp)
-target_include_directories(physical_link_tests PRIVATE ../../lib/PhysicalLink/src)
-set_target_properties(physical_link_tests PROPERTIES
-    CXX_STANDARD 11 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO)
-if(MSVC)
-    target_compile_options(physical_link_tests PRIVATE /W4 /WX /utf-8)
-else()
-    target_compile_options(physical_link_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
-endif()
-foreach(test_name IN ITEMS registration validation readings failures cleanup order)
-    add_test(NAME public_api.${test_name} COMMAND physical_link_tests ${test_name})
-endforeach()
-
-add_executable(v2_core_tests
+add_executable(protocol_core_tests
     ../protocol_v2/test_v2.cpp
     ../../lib/PhysicalLink/src/SensorRegistry.cpp
-    ../../lib/PhysicalLink/src/V2Codec.cpp
-    ../../lib/PhysicalLink/src/V2Metadata.cpp
-    ../../lib/PhysicalLink/src/V2SensorState.cpp)
-target_include_directories(v2_core_tests PRIVATE ../../lib/PhysicalLink/src)
-set_target_properties(v2_core_tests PROPERTIES
+    ../../lib/PhysicalLink/src/ProtocolCodec.cpp
+    ../../lib/PhysicalLink/src/Metadata.cpp
+    ../../lib/PhysicalLink/src/SensorState.cpp)
+target_include_directories(protocol_core_tests PRIVATE ../../lib/PhysicalLink/src)
+set_target_properties(protocol_core_tests PROPERTIES
     CXX_STANDARD 11 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO)
 if(MSVC)
-    target_compile_options(v2_core_tests PRIVATE /W4 /WX /utf-8 /D_CRT_SECURE_NO_WARNINGS)
+    target_compile_options(protocol_core_tests PRIVATE /W4 /WX /utf-8 /D_CRT_SECURE_NO_WARNINGS)
 else()
-    target_compile_options(v2_core_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    target_compile_options(protocol_core_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
 endif()
 foreach(test_name IN ITEMS numeric corrupt state images metadata)
-    add_test(NAME v2.${test_name} COMMAND v2_core_tests ${test_name})
+    add_test(NAME protocol.${test_name} COMMAND protocol_core_tests ${test_name})
 endforeach()
 
-add_test(NAME v2.golden_fixtures
+add_test(NAME protocol.golden_fixtures
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/../protocol_v2/verify_fixtures.py
-            $<TARGET_FILE:v2_core_tests>)
+            $<TARGET_FILE:protocol_core_tests>)
 
 add_executable(metadata_transport_tests
     ../metadata_transport/test_metadata_transport.cpp
     ../../lib/PhysicalLink/src/SensorRegistry.cpp
-    ../../lib/PhysicalLink/src/V2Metadata.cpp
-    ../../lib/PhysicalLink/src/V2MetadataSession.cpp
-    ../../lib/PhysicalLink/src/V2Codec.cpp
-    ../../lib/PhysicalLink/src/V2SensorState.cpp
-    ../../lib/PhysicalLink/src/ExperimentalV2Metadata.cpp)
+    ../../lib/PhysicalLink/src/Metadata.cpp
+    ../../lib/PhysicalLink/src/MetadataSession.cpp
+    ../../lib/PhysicalLink/src/ProtocolCodec.cpp
+    ../../lib/PhysicalLink/src/SensorState.cpp
+    ../../lib/PhysicalLink/src/BleTransport.cpp)
 target_include_directories(metadata_transport_tests PRIVATE ../../lib/PhysicalLink/src)
-target_compile_definitions(metadata_transport_tests PRIVATE PHYSICAL_LINK_EXPERIMENTAL_V2_METADATA=1)
 set_target_properties(metadata_transport_tests PROPERTIES
     CXX_STANDARD 11 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO)
 if(MSVC)
@@ -141,16 +102,16 @@ add_test(NAME metadata_transport.golden_pages
 add_executable(metadata_nimble_binding_tests
     ../metadata_transport/test_nimble_binding.cpp
     ../../lib/PhysicalLink/src/SensorRegistry.cpp
-    ../../lib/PhysicalLink/src/V2Metadata.cpp
-    ../../lib/PhysicalLink/src/V2MetadataSession.cpp
-    ../../lib/PhysicalLink/src/V2Codec.cpp
-    ../../lib/PhysicalLink/src/V2SensorState.cpp
-    ../../lib/PhysicalLink/src/ExperimentalV2Metadata.cpp
-    ../../lib/PhysicalLink/src/ExperimentalMetadataNimBLE.cpp)
+    ../../lib/PhysicalLink/src/Metadata.cpp
+    ../../lib/PhysicalLink/src/MetadataSession.cpp
+    ../../lib/PhysicalLink/src/ProtocolCodec.cpp
+    ../../lib/PhysicalLink/src/SensorState.cpp
+    ../../lib/PhysicalLink/src/BleTransport.cpp
+    ../../lib/PhysicalLink/src/NimbleBleDriver.cpp)
 target_include_directories(metadata_nimble_binding_tests PRIVATE
     ../../lib/PhysicalLink/src ../metadata_transport)
 target_compile_definitions(metadata_nimble_binding_tests PRIVATE
-    PHYSICAL_LINK_EXPERIMENTAL_V2_METADATA=1 PHYSICAL_LINK_METADATA_NATIVE_DRIVER_TEST=1)
+    PHYSICAL_LINK_NATIVE_DRIVER_TEST=1)
 set_target_properties(metadata_nimble_binding_tests PROPERTIES
     CXX_STANDARD 11 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO)
 if(MSVC)
@@ -162,21 +123,21 @@ foreach(test_name IN ITEMS startup offsets cleanup live live_rate)
     add_test(NAME metadata_binding.${test_name} COMMAND metadata_nimble_binding_tests ${test_name})
 endforeach()
 
-add_executable(v2_live_session_tests
+add_executable(live_session_tests
     ../metadata_transport/test_live_session.cpp
     ../../lib/PhysicalLink/src/SensorRegistry.cpp
-    ../../lib/PhysicalLink/src/V2Metadata.cpp
-    ../../lib/PhysicalLink/src/V2MetadataSession.cpp
-    ../../lib/PhysicalLink/src/V2Codec.cpp
-    ../../lib/PhysicalLink/src/V2SensorState.cpp)
-target_include_directories(v2_live_session_tests PRIVATE ../../lib/PhysicalLink/src)
-set_target_properties(v2_live_session_tests PROPERTIES
+    ../../lib/PhysicalLink/src/Metadata.cpp
+    ../../lib/PhysicalLink/src/MetadataSession.cpp
+    ../../lib/PhysicalLink/src/ProtocolCodec.cpp
+    ../../lib/PhysicalLink/src/SensorState.cpp)
+target_include_directories(live_session_tests PRIVATE ../../lib/PhysicalLink/src)
+set_target_properties(live_session_tests PROPERTIES
     CXX_STANDARD 11 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO)
 if(MSVC)
-    target_compile_options(v2_live_session_tests PRIVATE /W4 /WX /utf-8)
+    target_compile_options(live_session_tests PRIVATE /W4 /WX /utf-8)
 else()
-    target_compile_options(v2_live_session_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    target_compile_options(live_session_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
 endif()
 foreach(test_name IN ITEMS initial consistency commands subscription pinning coalescing rate reconnect)
-    add_test(NAME v2_live.${test_name} COMMAND v2_live_session_tests ${test_name})
+    add_test(NAME live.${test_name} COMMAND live_session_tests ${test_name})
 endforeach()

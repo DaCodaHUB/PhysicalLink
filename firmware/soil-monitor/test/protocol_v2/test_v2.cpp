@@ -1,6 +1,6 @@
-#include "V2Codec.h"
-#include "V2Metadata.h"
-#include "V2SensorState.h"
+#include "ProtocolCodec.h"
+#include "Metadata.h"
+#include "SensorState.h"
 #include <array>
 #include <cmath>
 #include <cstdio>
@@ -8,7 +8,7 @@
 #include <limits>
 #include <string>
 using namespace physical_link;
-using namespace physical_link::v2;
+using namespace physical_link::protocol;
 #define CHECK(x) do { if (!(x)) { std::fprintf(stderr,"%d: %s\n",__LINE__,#x); return false; } } while(false)
 const char* uuid = "710abdfc-9d05-46de-a790-7fe484816eea";
 const std::uint64_t epoch = UINT64_C(0xb398ca802d871ae0);

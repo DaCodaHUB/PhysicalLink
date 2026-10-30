@@ -198,10 +198,10 @@ class DashboardPersistenceViewModelTest {
         assertNull(storage.observe("A").first())
     }
 
-    @Test fun `v2 UUID layout survives changed address epoch reconnect and manifest`() = runBlocking {
+    @Test fun `UUID layout survives changed address epoch reconnect and manifest`() = runBlocking {
         Dispatchers.setMain(Dispatchers.Unconfined)
-        val m = V2Metadata("00112233-4455-6677-8899-aabbccddeeff", "Board", "0000000000000001",
-            listOf(V2Sensor("a", "Alpha", "u"), V2Sensor("b", "Beta", "u")))
+        val m = SensorManifest("00112233-4455-6677-8899-aabbccddeeff", "Board", "0000000000000001",
+            listOf(ManifestSensor("a", "Alpha", "u"), ManifestSensor("b", "Beta", "u")))
         val id = m.dashboardDeviceId()
         val devices = Devices(m.dashboardCapabilities())
         devices.switchTo(id, m.dashboardCapabilities())
@@ -217,7 +217,7 @@ class DashboardPersistenceViewModelTest {
         devices.capabilities.value = null
         devices.sensorValues.value = emptyMap()
         viewModels.clear()
-        val changed = m.copy(epoch = "0000000000000002", sensors = listOf(m.sensors.first(), V2Sensor("c", "Gamma", "u")))
+        val changed = m.copy(epoch = "0000000000000002", sensors = listOf(m.sensors.first(), ManifestSensor("c", "Gamma", "u")))
         devices.switchTo(changed.dashboardDeviceId(), changed.dashboardCapabilities())
         val restored = vm(devices, storage, "reconnected")
         val state = restored.awaitState { !it.loadingLayout && it.widgets.size + it.hiddenWidgets.size == 4 }

@@ -19,7 +19,7 @@ import org.robolectric.annotation.Config
 @Config(sdk = [34], application = Application::class)
 class DashboardUiTest {
     @get:Rule val compose = createComposeRule()
-    private val capabilities = DeviceCapabilities(1, "Test project", listOf(DeviceCapability("temperature", "5679", "C", "number")))
+    private val capabilities = DeviceCapabilities(2, "Test project", listOf(DeviceCapability("temperature", "v2:temperature", "C", "number")))
     private val initial = dashboardState("board", capabilities, emptyMap(), null)
     private fun configure() = compose.onNodeWithContentDescription("Configure Temperature widget 1").performScrollTo().performClick()
     private fun footer(text: String) {
@@ -52,13 +52,13 @@ class DashboardUiTest {
         compose.setContent { PhysicalLinkTheme(dynamicColor = false) {
             DashboardContent(ConnectionState.Connected, initial, "board", capabilities)
         } }
-        compose.onNodeWithText("UUID: 5679", substring = true).assertDoesNotExist()
+        compose.onNodeWithText("Sensor ID: temperature", substring = true).assertDoesNotExist()
         compose.onNodeWithText("Disconnect").assertDoesNotExist()
         compose.onNodeWithContentDescription("More device actions").performClick()
         compose.onNodeWithText("Disconnect").assertExists()
         compose.onNodeWithText("Device details").performClick()
         compose.onNodeWithText("Bluetooth address").assertExists()
-        compose.onNodeWithText("UUID: 5679", substring = true).assertExists()
+        compose.onNodeWithText("Sensor ID: temperature", substring = true).assertExists()
     }
 
     @Test fun `reset at grid bottom requires confirmation and can be cancelled`() {

@@ -31,7 +31,7 @@ internal fun DeviceCard(device: DiscoveredDevice, onConnect: () -> Unit, onDetai
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(device.name, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Text("Protocol v${device.protocolVersion}" + if (device.protocolVersion == 2) " ? Experimental" else "")
+                Text("PhysicalLink · Protocol ${device.protocolVersion}")
                 Text(signalStrengthLabel(device.rssi), style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }

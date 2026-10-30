@@ -1,22 +1,13 @@
-# PhysicalLink firmware
+# PhysicalLink for ESP32
 
-Run PlatformIO commands from this directory (`firmware/soil-monitor`).
-The default/latest firmware is **v2-real-sensors** for ESP32-WROOM-32:
-BME280 at 0x76 on SDA21/SCL22 and capacitive soil moisture on GPIO34.
+Install the library → register your sensors → upload → connect Android → see
+your customizable dashboard. PhysicalLink supports 1–16 numeric sensors over
+BLE. The sketch owns sensor acquisition; the library owns identity, metadata,
+state synchronization, live notifications, and safe BLE shutdown.
 
-| Firmware | Environment | Entry point |
-| --- | --- | --- |
-| Default/latest: four real sensors over v2 | `v2-real-sensors` | `examples/v2_real_sensors/main.cpp` |
-| Legacy v1 regression | `esp32dev` | `src/main.cpp` |
-| Synthetic v2 metadata/live stress test, sixteen channels | `v2-metadata-experimental` | `examples/v2_metadata/main.cpp` |
+## Use this project
 
-`platformio.ini` defines all three environments. `default_envs` selects only
-`v2-real-sensors`; each environment explicitly includes exactly one application
-entry point through `build_src_filter`. The shared source root does not include
-other examples, tests, or legacy application sources in that environment.
-Library dependencies are compiled separately by PlatformIO.
-
-## Default/latest
+From `firmware/soil-monitor`, with PlatformIO installed:
 
 ```sh
 pio run
@@ -24,66 +15,87 @@ pio run -t upload
 pio device monitor --baud 115200
 ```
 
-Explicit selection is also supported:
+The default `real-sensors` application uses ESP32-WROOM-32, BME280 at I2C 0x76
+(SDA21/SCL22), and a capacitive soil probe on GPIO34. See the
+[wiring and acceptance guide](examples/real_sensors/README.md).
+In Android, scan for PhysicalLink, connect, then open and customize your dashboard
+with Value, Gauge, Chart, and Range widgets. Device Diagnostics remains available
+from the connected device screen.
 
-```sh
-pio run -e v2-real-sensors
-pio run -e v2-real-sensors -t upload
-```
+| Example | Build | Upload |
+| --- | --- | --- |
+| Default real sensors | `pio run` | `pio run -t upload` |
+| [Beginner synthetic sensors](examples/basic/main.cpp) | `pio run -e basic` | `pio run -e basic -t upload` |
+| [16-sensor stress test](examples/stress_test/main.cpp) | `pio run -e stress-test` | `pio run -e stress-test -t upload` |
 
-See [real-sensor wiring, identity, failure behavior, and hardware acceptance](examples/v2_real_sensors/README.md).
-BLE UUIDs, sensor IDs, and the factory-eFuse-derived persistent device UUID
-are unchanged by default selection. Hardware acceptance remains pending;
-successful builds and host tests do not verify real BLE/sensor operation.
+Each environment includes exactly one entry point. Older firmware is available
+in Git history; there is one supported production implementation. Future examples
+should become the default only after they work and pass validation.
+Append `--upload-port COM5` if needed (replace COM5 with the port reported by
+`pio device list`). No firmware was uploaded during this consolidation.
 
-## Legacy regression firmware
-
-```sh
-pio run -e esp32dev
-pio run -e esp32dev -t upload
-```
-
-This retains the original v1 application and its Adafruit BME280 dependency.
-
-## Synthetic stress-test firmware
-
-```sh
-pio run -e v2-metadata-experimental
-pio run -e v2-metadata-experimental -t upload
-```
-
-See the [State/Live stress-test guide](test/metadata_transport/LIVE_TRANSPORT.md)
-for Serial commands, synthetic values, and BLE inspection steps.
-The old explicit configuration commands remain supported:
-
-```sh
-pio run -c platformio-v2-metadata.ini -e v2-metadata-experimental
-pio run -c platformio-v2-real-sensors.ini -e v2-real-sensors
-```
-
-These files now delegate to the root configuration; always include the shown
-`-e` when using a compatibility configuration. Add `-t upload` to upload.
-Append `--upload-port COM5` to any upload command if automatic port detection
-is unsuitable (replace COM5 with the port from `pio device list`). Upload commands
-are instructions only; no upload was performed for the default-selection change.
-
-On Windows if `pio` is not on PATH, use:
+On Windows without `pio` on PATH, use:
 
 ```powershell
 $pio = "$env:USERPROFILE/.platformio/penv/Scripts/pio.exe"
 & $pio run
-# Use & $pio in place of pio for the other commands above.
+# Replace pio with & $pio in the commands above.
 ```
 
-## Native validation
+## Use PhysicalLink in your own project
+
+The self-contained library is [lib/PhysicalLink](lib/PhysicalLink/README.md).
+Copy that folder into your project's `lib/PhysicalLink` and pin its BLE dependency
+in `platformio.ini`, or install a local library archive as described in its README.
+No repository include paths, special build flags, sensor libraries, or Android
+sources are required. The library declares its dependency in `library.json`.
+It has not been published to a registry.
+
+```cpp
+#include <PhysicalLink.h>
+PhysicalLink device("My Greenhouse");
+
+void setup() {
+    // Check each return value in a complete sketch (see examples/basic).
+    device.addSensor("temperature", "Temperature", "C");
+    device.addSensor("humidity", "Humidity", "%");
+    device.begin();
+}
+
+void loop() {
+    // On your own acquisition schedule:
+    // device.update("temperature", readTemperature());
+    // device.unavailable("humidity"); // A failed/missing measurement.
+    device.poll();
+}
+```
+
+Keep sensor IDs stable. The library preserves the existing factory-eFuse-derived
+board UUID and changes only the session epoch on restart. Android layout keys
+such as `v2:<UUID>` are deliberately unchanged; no storage migration is required.
+
+## Validate changes
 
 ```sh
 cmake -S test/sensor_registry -B .pio/registry-tests
 cmake --build .pio/registry-tests --config Release
 ctest --test-dir .pio/registry-tests -C Release --output-on-failure
+pio run
+pio run -e basic -e stress-test
+python test/standalone/prepare_consumer.py
+pio run -d .pio/standalone-consumer
 git diff --check
 ```
 
-Future firmware examples should become the default only after they work and
-pass validation. Change `default_envs` deliberately and retain older firmware
-as explicitly selectable regression environments.
+Run PlatformIO builds sequentially, especially when switching configurations.
+From the repository root run Android validation with
+`./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleRelease`
+(Windows: `gradlew.bat`).
+
+Protocol version **2**, BLE UUIDs, binary fixtures, commands, sensor/channel
+limits, and persistent identifiers are unchanged. Advanced details live in the
+[transport developer guide](test/metadata_transport/LIVE_TRANSPORT.md) and
+[codec test guide](test/protocol_v2/README.md).
+The user reported successful real-sensor/dashboard hardware integration before
+this refactor. This consolidation still needs the hardware acceptance steps in
+the real-sensor guide; host tests and builds do not verify the radio or wiring.
