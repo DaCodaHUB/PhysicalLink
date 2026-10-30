@@ -19,3 +19,4 @@ local.properties
 firmware/esp32sensors/docs/
 firmware/ConsumerTest/package/
 firmware/releases/
+artifacts/

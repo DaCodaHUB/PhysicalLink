@@ -146,7 +146,7 @@ class OnboardingUiTest {
         compose.setContent { PhysicalLinkTheme(dynamicColor = false) {
             DeviceCard(DiscoveredDevice(name = "Maker board", address = "AA:BB", rssi = -50), { connects++ }, {})
         } }
-        compose.onNodeWithText("PhysicalLink device").assertExists()
+        compose.onNodeWithText("Tap to connect").assertExists()
         compose.onNodeWithText("Protocol", substring = true).assertDoesNotExist()
         compose.onNodeWithTag("device:AA:BB").performClick()
         assertEquals(1, connects)

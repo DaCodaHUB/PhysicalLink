@@ -1,5 +1,6 @@
 package com.dacodahub.physicallink.feature.dashboard
 
+import com.dacodahub.physicallink.core.designsystem.theme.currentWidgetAccent
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
@@ -8,6 +9,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -29,7 +31,7 @@ internal fun ChartWidget(state: DashboardWidgetState, controls: WidgetControls? 
         series?.let { chartAxisLabels(it, settings.precision) }
     }
     val unit = sensorUnit(state.capability?.unit.orEmpty())
-    val ink = MaterialTheme.colorScheme.primary
+    val ink = currentWidgetAccent()
     val grid = MaterialTheme.colorScheme.outlineVariant
     WidgetContainer((state.capability?.name ?: sensorName(state.widget.source.capabilityId)), status = freshnessLabel(state), controls = controls) {
         val current = state.timeline?.takeIf { it.latestValid }?.latestNumeric?.takeIf { it.isFinite() }
@@ -46,18 +48,32 @@ internal fun ChartWidget(state: DashboardWidgetState, controls: WidgetControls? 
                 val plotWidth = (size.width - 2 * inset).coerceAtLeast(0f)
                 val plotHeight = (size.height - 2 * inset).coerceAtLeast(0f)
                 val paths = mutableListOf<Path>()
+                val fills = mutableListOf<Path>()
+                val fillBrush = Brush.verticalGradient(listOf(ink.copy(alpha = 0.14f), ink.copy(alpha = 0f)),
+                    startY = inset, endY = inset + plotHeight.coerceAtLeast(1f))
                 val dots = mutableListOf<Offset>()
                 series.segments.forEach { segment ->
                     fun point(sample: NumericSample) = Offset(
                         inset + chartTimeFraction(sample.timeMs, plotTime, settings.chartWindowSeconds) * plotWidth,
                         inset + (1f - axisFraction(sample.value, series.minimum, series.maximum)) * plotHeight)
                     if (segment.size == 1) dots += point(segment.first())
-                    else if (segment.isNotEmpty()) paths += Path().apply {
-                        val start = point(segment.first()); moveTo(start.x, start.y)
-                        for (index in 1 until segment.size) { val next = point(segment[index]); lineTo(next.x, next.y) }
+                    else if (segment.isNotEmpty()) {
+                        val line = Path().apply {
+                            val start = point(segment.first()); moveTo(start.x, start.y)
+                            for (index in 1 until segment.size) { val next = point(segment[index]); lineTo(next.x, next.y) }
+                        }
+                        paths += line
+                        // Close each segment separately to preserve gaps between missing updates.
+                        fills += Path().apply {
+                            addPath(line)
+                            lineTo(point(segment.last()).x, inset + plotHeight)
+                            lineTo(point(segment.first()).x, inset + plotHeight)
+                            close()
+                        }
                     }
                 }
                 onDrawBehind {
+                    fills.forEach { drawPath(it, fillBrush) }
                     repeat(3) { index ->
                         val y = inset + plotHeight * index / 2f
                         drawLine(grid, Offset(inset, y), Offset(size.width - inset, y), 1.dp.toPx())
@@ -84,8 +100,8 @@ internal fun BoundedWidget(state: DashboardWidgetState, controls: WidgetControls
     val value = state.timeline?.takeIf { it.latestValid }?.latestNumeric
     val range = rangeReading(value, settings)
     val unit = sensorUnit(state.capability?.unit.orEmpty())
-    val ink = MaterialTheme.colorScheme.primary
-    val track = MaterialTheme.colorScheme.surfaceVariant
+    val ink = currentWidgetAccent()
+    val track = MaterialTheme.colorScheme.surfaceContainerHigh
     val error = MaterialTheme.colorScheme.error
     val title = (state.capability?.name ?: sensorName(state.widget.source.capabilityId))
     WidgetContainer(title, status = freshnessLabel(state), controls = controls) {

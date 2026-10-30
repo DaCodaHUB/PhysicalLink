@@ -29,9 +29,10 @@ internal fun DeviceCard(device: DiscoveredDevice, onConnect: () -> Unit, onDetai
             .clickable(role = Role.Button, onClickLabel = "Connect to ${device.name}", onClick = onConnect)
             .padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            DeviceEmblem()
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(device.name, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Text("PhysicalLink device")
+                Text("Tap to connect", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                 Text(signalStrengthLabel(device.rssi), style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }

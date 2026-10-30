@@ -26,16 +26,29 @@ internal fun SensorReading(reading: String, unit: String, compact: Boolean = fal
     val display = if (numeric) compactNumericReading(reading) else reading
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val unitWidth = maxWidth * 0.35f
+        val stackedUnit = unit.length > 3 && maxWidth < 220.dp
+        if (stackedUnit) {
+            Column(Modifier.fillMaxWidth().clearAndSetSemantics {
+                contentDescription = if (waiting) "No reading yet" else "$reading $unit"
+            }, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(display, style = MaterialTheme.typography.headlineLarge,
+                    autoSize = androidx.compose.foundation.text.TextAutoSize.StepBased(minFontSize = 16.sp,
+                        maxFontSize = if (compact) 24.sp else 36.sp),
+                    maxLines = if (numeric) 1 else 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                Text(unit, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        } else {
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.fillMaxWidth().clearAndSetSemantics {
                 contentDescription = if (waiting) "No reading yet" else listOf(reading, unit).filter { it.isNotEmpty() }.joinToString(" ")
             }) {
-            Text(display, Modifier.weight(1f), style = MaterialTheme.typography.headlineLarge,
+            Text(display, Modifier.weight(1f).alignByBaseline(), style = MaterialTheme.typography.headlineLarge,
                 autoSize = androidx.compose.foundation.text.TextAutoSize.StepBased(minFontSize = 16.sp,
                     maxFontSize = if (compact) 24.sp else 36.sp),
                 maxLines = if (numeric) 1 else 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-            if (unit.isNotEmpty()) Text(unit, Modifier.widthIn(max = unitWidth),
+            if (unit.isNotEmpty()) Text(unit, Modifier.widthIn(max = unitWidth).alignByBaseline(),
                 style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
         }
     }
 }

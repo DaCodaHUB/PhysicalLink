@@ -2,6 +2,9 @@ package com.dacodahub.physicallink.feature.dashboard
 
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import com.dacodahub.physicallink.core.designsystem.theme.LocalWidgetAccent
+import com.dacodahub.physicallink.core.designsystem.theme.widgetAccent
 import com.dacodahub.physicallink.domain.model.*
 
 internal fun freshnessLabel(state: DashboardWidgetState): String = (if (state.simulated) "Simulated - " else "") + when (state.freshness) {
@@ -12,6 +15,7 @@ internal fun freshnessLabel(state: DashboardWidgetState): String = (if (state.si
 
 @Composable
 internal fun DashboardWidgetCard(state: DashboardWidgetState, controls: WidgetControls? = null) {
+    CompositionLocalProvider(LocalWidgetAccent provides widgetAccent(state.widget.source.capabilityId)) {
     val title = (state.capability?.name ?: sensorName(state.widget.source.capabilityId))
     if (state.capability == null) {
         WidgetContainer(title, status = "This sensor is not currently available.", controls = controls) {
@@ -23,4 +27,5 @@ internal fun DashboardWidgetCard(state: DashboardWidgetState, controls: WidgetCo
         WidgetType.CHART -> ChartWidget(state, controls)
         WidgetType.GAUGE, WidgetType.RANGE -> BoundedWidget(state, controls)
     }
+}
 }

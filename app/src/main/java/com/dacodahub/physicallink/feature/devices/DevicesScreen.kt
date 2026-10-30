@@ -1,5 +1,7 @@
 package com.dacodahub.physicallink.feature.devices
 
+import com.dacodahub.physicallink.core.designsystem.theme.*
+import kotlinx.coroutines.launch
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -9,6 +11,8 @@ import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
@@ -103,6 +107,24 @@ internal fun DevicesContent(
     onDiagnostic: (() -> Unit)? = null,
     showIntroduction: Boolean = false, demoExplored: Boolean = false, onDismissIntroduction: () -> Unit = {}
 ) {
+    val appearanceContext = LocalContext.current
+    val appearanceSettings = remember { AppearanceSettings(appearanceContext) }
+    val appearance by appearanceSettings.appearance.collectAsStateWithLifecycle(initialValue = Appearance.SYSTEM)
+    val appearanceScope = rememberCoroutineScope()
+    var showAppearance by rememberSaveable { mutableStateOf(false) }
+    if (showAppearance) AlertDialog(onDismissRequest = { showAppearance = false }, title = { Text("Appearance") }, text = {
+        Column(Modifier.selectableGroup()) {
+            Appearance.entries.forEach { option ->
+                Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).selectable(
+                    selected = appearance == option, role = Role.RadioButton,
+                    onClick = { appearanceScope.launch { appearanceSettings.setAppearance(option) } }),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    RadioButton(selected = appearance == option, onClick = null)
+                    Text(option.label, Modifier.padding(start = 12.dp))
+                }
+            }
+        }
+    }, confirmButton = { TextButton(onClick = { showAppearance = false }) { Text("Done") } })
     var replayIntroduction by rememberSaveable { mutableStateOf(false) }
     fun dismissIntroduction() { replayIntroduction = false; onDismissIntroduction() }
     var hasScanned by rememberSaveable { mutableStateOf(false) }
@@ -134,7 +156,13 @@ internal fun DevicesContent(
         Box(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding), contentAlignment = Alignment.TopCenter) {
             LazyColumn(Modifier.widthIn(max = 840.dp).fillMaxSize(), contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                if (connected || connecting) item {
+                item {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Text("Your connections", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+                        TextButton(onClick = { showAppearance = true }) { Text("Appearance") }
+                    }
+                }
+                if (connecting) item {
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(name, style = MaterialTheme.typography.titleMedium)
                         DeviceConnectionText(connection)
@@ -147,13 +175,14 @@ internal fun DevicesContent(
                         }
                     }
                     connected -> item {
-                        StatePanel("Your dashboard is ready", "View your readings or customize how they are arranged.") {
-                            Button(onClick = onOpenDashboard, modifier = Modifier.fillMaxWidth()) { Text("Open dashboard") }
-                            onDiagnostic?.let { TextButton(onClick = it) { Text("Device Diagnostics") } }
-                        }
+                        ConnectedDeviceCard(name, selected?.rssi, capabilities?.capabilities?.size,
+                            onOpenDashboard, onDiagnostic, onCancel)
                     }
                 }
-                item {
+                if (connected || connecting) item {
+                    TextButton(onClick = onTryDemo, modifier = Modifier.heightIn(min = 48.dp)) { Text("Try Demo") }
+                }
+                if (!connected && !connecting) item {
                     if (showIntroduction || replayIntroduction) StatePanel("Welcome to PhysicalLink", "Connect your PhysicalLink device and turn its readings into a dashboard you can customize.") {
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Button(onClick = { dismissIntroduction(); onTryDemo() }) { Text("Try Demo") }
@@ -189,7 +218,9 @@ internal fun DevicesContent(
                         StatePanel("Looking for nearby devices", "Scanning stops after 15 seconds.", progress = true)
                     }
                     if (devices.isEmpty() && scan == ScanState.Idle && !permissionDenied && connection !is ConnectionState.Error && connection != ConnectionState.ConnectionLost) item {
-                        StatePanel(if (hasScanned) "No compatible devices found" else "No devices found yet", "Power on your device running PhysicalLink firmware. Keep it nearby and tap Scan. See Help if it does not appear.")
+                        StatePanel(if (hasScanned) "No compatible devices found" else "No devices found yet", "Power on your device running PhysicalLink firmware. Keep it nearby and tap Scan. See Help if it does not appear.") {
+                            Button(onClick = onScan, modifier = Modifier.fillMaxWidth()) { Text("Scan for devices") }
+                        }
                     }
                     if (devices.isNotEmpty()) {
                         item { Text("Nearby devices", Modifier.semantics { heading() }, style = MaterialTheme.typography.titleMedium) }
@@ -218,12 +249,12 @@ internal fun DevicesContent(
 
 @Composable
 private fun StatePanel(
-    title: String, message: String, progress: Boolean = false, error: Boolean = false,
+    title: String, message: String, progress: Boolean = false, error: Boolean = false, featured: Boolean = false,
     actions: @Composable ColumnScope.() -> Unit = {}
 ) {
     Surface(shape = MaterialTheme.shapes.large,
-        color = if (error) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.surfaceContainer,
-        contentColor = if (error) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurface) {
+        color = if (error) MaterialTheme.colorScheme.errorContainer else if (featured) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainer,
+        contentColor = if (error) MaterialTheme.colorScheme.onErrorContainer else if (featured) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface) {
         Column(Modifier.fillMaxWidth().padding(16.dp).semantics { liveRegion = LiveRegionMode.Polite },
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
             if (progress) LinearProgressIndicator(Modifier.fillMaxWidth())
