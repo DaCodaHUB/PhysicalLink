@@ -5,7 +5,7 @@
 #include <limits>
 namespace physical_link { namespace protocol {
 static_assert(sizeof(double) == 8 && std::numeric_limits<double>::is_iec559 &&
-              std::numeric_limits<double>::digits == 53, "v2 requires IEEE binary64");
+              std::numeric_limits<double>::digits == 53, "PhysicalLink requires IEEE binary64");
 namespace {
 Status validate(const Record& record, std::size_t count) {
     if (!wire::countValid(count) || record.channel >= count) return Status::InvalidChannel;

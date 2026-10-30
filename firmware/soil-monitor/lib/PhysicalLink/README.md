@@ -89,8 +89,8 @@ session; restore fresh samples afterwards.
 The persistent device UUID remains
 `504c0000-0000-4000-8000-<factory eFuse MAC as 12 lowercase hex digits>`.
 Keep IDs stable across updates to retain saved dashboard bindings. The existing
-advertised name **PhysicalLink V2** is retained for compatibility; Android
-discovers by service UUID. The project name becomes the manifest display name.
+advertised name is **PhysicalLink**; Android discovers by service UUID. The project
+name becomes the manifest display name.
 Protocol version stays 2. The session epoch changes on every begin/restart.
 
 Call all methods from one application task, never ISR or concurrently. Keep

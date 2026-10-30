@@ -1,5 +1,6 @@
 package com.dacodahub.physicallink.feature.devices
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -14,13 +15,14 @@ import com.dacodahub.physicallink.domain.model.SensorManifest
 
 @Composable
 internal fun DeviceDiagnosticsScreen(metadata: SensorManifest, live: LiveSensorState, onDisconnect: () -> Unit, onBack: () -> Unit = {}) {
+    BackHandler(onBack = onBack)
     var now by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
     LaunchedEffect(Unit) { while (true) { delay(1_000); now = SystemClock.elapsedRealtime() } }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item {
             Text("Device Diagnostics", style = MaterialTheme.typography.titleLarge)
             Text(metadata.device, style = MaterialTheme.typography.headlineSmall)
-            Text("Protocol version 2\nPersistent device UUID: ${metadata.deviceId}\nEpoch: ${metadata.epoch}\nSensor count: ${metadata.sensors.size}")
+            Text("Protocol version ${metadata.version}\nPersistent device UUID: ${metadata.deviceId}\nEpoch: ${metadata.epoch}\nSensor count: ${metadata.sensors.size}")
             Text("Metadata retrieval complete")
             Text(when {
                 !live.synchronized -> "Synchronizing initial state..."

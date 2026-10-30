@@ -28,7 +28,7 @@ constexpr char ServiceUuid[] = "b89e2000-7c42-4f9d-9d25-8a639eab5120";
 constexpr char MetadataUuid[] = "b89e2001-7c42-4f9d-9d25-8a639eab5120";
 constexpr char ControlUuid[] = "b89e2002-7c42-4f9d-9d25-8a639eab5120";
 constexpr char StateUuid[] = "b89e2003-7c42-4f9d-9d25-8a639eab5120";
-constexpr char DeviceName[] = "PhysicalLink V2";
+constexpr char DeviceName[] = "PhysicalLink";
 // Legacy ADV: flags (3) + complete 128-bit UUID (18). Scan response:
 // complete local name AD header (2) + name bytes (excluding the NUL).
 static_assert(3 + 18 <= 31, "Service advertising exceeds legacy payload limit");

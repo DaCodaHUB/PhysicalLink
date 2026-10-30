@@ -76,7 +76,7 @@ class OnboardingUiTest {
             DevicesContent(emptyList(), ConnectionState.Disconnected, ScanState.Idle, onScan = { visible = true })
             if (visible) PermissionExplanation(false, onDismiss = { visible = false }, onContinue = { proceeded++; visible = false })
         } }
-        compose.onNodeWithText("Find your sensor project").assertDoesNotExist()
+        compose.onNodeWithText("Find your PhysicalLink device").assertDoesNotExist()
         compose.onNodeWithContentDescription("Scan for devices").performClick()
         compose.onNodeWithText("Nearby devices permission", substring = true).assertExists()
         assertEquals(0, proceeded)
@@ -128,6 +128,55 @@ class OnboardingUiTest {
         compose.onNodeWithText("Not now").performScrollTo().performClick()
         restoration.emulateSavedInstanceStateRestore()
         compose.onNodeWithText("Welcome to PhysicalLink").assertDoesNotExist()
+    }
+
+    @Test fun `metadata errors use plain guidance and preserve full diagnostics`() {
+        val raw = "Invalid sensor metadata: invalid manifest fields. Check firmware and retry."
+        compose.setContent { PhysicalLinkTheme(dynamicColor = false) {
+            DevicesContent(emptyList(), ConnectionState.Error(raw), ScanState.Idle)
+        } }
+        compose.onNodeWithText("Firmware compatibility issue").assertExists()
+        compose.onNodeWithText("Use matching PhysicalLink firmware", substring = true).assertExists()
+        compose.onNodeWithText(raw).assertDoesNotExist()
+        compose.onNodeWithContentDescription("Device details").performClick()
+        compose.onNodeWithText(raw).assertExists()
+    }
+    @Test fun `device card avoids protocol labels and connects directly`() {
+        var connects = 0
+        compose.setContent { PhysicalLinkTheme(dynamicColor = false) {
+            DeviceCard(DiscoveredDevice(name = "Maker board", address = "AA:BB", rssi = -50), { connects++ }, {})
+        } }
+        compose.onNodeWithText("PhysicalLink device").assertExists()
+        compose.onNodeWithText("Protocol", substring = true).assertDoesNotExist()
+        compose.onNodeWithTag("device:AA:BB").performClick()
+        assertEquals(1, connects)
+    }
+    @Test fun `sensor setup shows loading and cancel without requiring dashboard customization`() {
+        var cancels = 0
+        compose.setContent { PhysicalLinkTheme(dynamicColor = false) {
+            DevicesContent(emptyList(), ConnectionState.Discovering, ScanState.Idle, onCancel = { cancels++ })
+        } }
+        compose.onNodeWithText("Loading sensors").assertExists()
+        compose.onNodeWithText("Retrieving sensors and synchronizing readings. Keep the device nearby.").assertExists()
+        compose.onNodeWithText("Cancel connection").performClick()
+        assertEquals(1, cancels)
+    }
+
+    @Test fun `diagnostics retain protocol synchronization availability and sequence with a back action`() {
+        var backs = 0
+        compose.setContent { PhysicalLinkTheme(dynamicColor = false) {
+            DeviceDiagnosticsScreen(SensorManifest("uuid", "Maker board", "epoch",
+                listOf(ManifestSensor("probe", "Probe", "mV"))),
+                LiveSensorState(mapOf("probe" to SensorReading(0, null, 42, 0, 0)), true, requestId = 3),
+                onDisconnect = {}, onBack = { backs++ })
+        } }
+        compose.onNodeWithText("Protocol version 2", substring = true).assertExists()
+        compose.onNodeWithText("State synchronized (request 3); live notifications enabled").assertExists()
+        compose.onNodeWithText("Availability: Unavailable", substring = true).performScrollTo().assertExists()
+        compose.onNodeWithText("Sequence: 42", substring = true).assertExists()
+        compose.onNodeWithText("Acquisition age: unknown (unavailable)", substring = true).assertExists()
+        compose.onNodeWithText("Back to devices").performScrollTo().performClick()
+        assertEquals(1, backs)
     }
 
 }

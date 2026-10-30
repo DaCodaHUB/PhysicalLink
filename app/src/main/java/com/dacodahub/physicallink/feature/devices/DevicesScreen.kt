@@ -49,8 +49,10 @@ fun DevicesScreen(onOpenDashboard: () -> Unit, onTryDemo: () -> Unit = {}, viewM
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { viewModel.stopScan() }
     LaunchedEffect(connection, openWhenConnected, capabilities, metadata) {
         if (connection == ConnectionState.Connected && openWhenConnected) {
-            openWhenConnected = false
-            if (capabilities != null) onOpenDashboard()
+            if (capabilities != null) {
+                openWhenConnected = false
+                onOpenDashboard()
+            }
         } else if (connection is ConnectionState.Error || connection == ConnectionState.ConnectionLost) {
             openWhenConnected = false
         }
@@ -111,7 +113,7 @@ internal fun DevicesContent(
     val selected = devices.find { it.address == deviceId }
     val connected = connection == ConnectionState.Connected
     val connecting = connection == ConnectionState.Connecting || connection == ConnectionState.Discovering
-    val name = capabilities?.device?.takeIf { it.isNotBlank() } ?: selected?.name ?: "Sensor project"
+    val name = capabilities?.device?.takeIf { it.isNotBlank() } ?: selected?.name ?: "PhysicalLink device"
     val canScan = !connected && !connecting
     LaunchedEffect(scan) { if (scan == ScanState.Scanning) hasScanned = true }
     LaunchedEffect(connection) { if (!connecting) retrying = false }
@@ -140,7 +142,7 @@ internal fun DevicesContent(
                 }
                 when {
                     connecting -> item {
-                        StatePanel(if (retrying) "Retrying connection" else "Connecting to your project", "Retrieving sensors and synchronizing readings. Keep the device nearby.", progress = true) {
+                        StatePanel(if (retrying) "Retrying connection" else "Connecting to your device", "Retrieving sensors and synchronizing readings. Keep the device nearby.", progress = true) {
                             OutlinedButton(onClick = onCancel) { Text("Cancel connection") }
                         }
                     }
@@ -152,7 +154,7 @@ internal fun DevicesContent(
                     }
                 }
                 item {
-                    if (showIntroduction || replayIntroduction) StatePanel("Welcome to PhysicalLink", "Connect a compatible ESP32 sensor project and turn its readings into a dashboard you can customize.") {
+                    if (showIntroduction || replayIntroduction) StatePanel("Welcome to PhysicalLink", "Connect your PhysicalLink device and turn its readings into a dashboard you can customize.") {
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Button(onClick = { dismissIntroduction(); onTryDemo() }) { Text("Try Demo") }
                             OutlinedButton(onClick = { dismissIntroduction(); onScan() }, enabled = canScan) { Text("Connect a Device") }
@@ -166,8 +168,8 @@ internal fun DevicesContent(
                 }
                 if (canScan) {
                     if (!permissionDenied && scan !is ScanState.Error && (connection is ConnectionState.Error || connection == ConnectionState.ConnectionLost)) item {
-                        StatePanel(if (connection == ConnectionState.ConnectionLost) "Project disconnected" else connectionFailureTitle(connection),
-                            (connection as? ConnectionState.Error)?.message?.takeIf { it.contains("metadata", true) || it.contains("synchronization", true) } ?: connectionHelp(connection), error = true) {
+                        StatePanel(if (connection == ConnectionState.ConnectionLost) "Device disconnected" else connectionFailureTitle(connection),
+                            connectionHelp(connection), error = true) {
                             if ((connection as? ConnectionState.Error)?.message?.contains("permission", true) == true)
                                 TextButton(onClick = onSettings) { Text("Open app settings") }
                             else if (!deviceId.isNullOrBlank()) OutlinedButton(onClick = {
@@ -184,10 +186,10 @@ internal fun DevicesContent(
                         }
                     }
                     if (scan == ScanState.Scanning) item {
-                        StatePanel("Looking for nearby projects", "Scanning stops after 15 seconds.", progress = true)
+                        StatePanel("Looking for nearby devices", "Scanning stops after 15 seconds.", progress = true)
                     }
                     if (devices.isEmpty() && scan == ScanState.Idle && !permissionDenied && connection !is ConnectionState.Error && connection != ConnectionState.ConnectionLost) item {
-                        StatePanel(if (hasScanned) "No compatible devices found" else "No devices found yet", "Power on a compatible project running matching PhysicalLink firmware. Keep it nearby and tap Scan. See Help if it does not appear.")
+                        StatePanel(if (hasScanned) "No compatible devices found" else "No devices found yet", "Power on your device running PhysicalLink firmware. Keep it nearby and tap Scan. See Help if it does not appear.")
                     }
                     if (devices.isNotEmpty()) {
                         item { Text("Nearby devices", Modifier.semantics { heading() }, style = MaterialTheme.typography.titleMedium) }

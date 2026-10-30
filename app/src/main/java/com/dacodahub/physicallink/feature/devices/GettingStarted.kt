@@ -11,15 +11,15 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 
 internal val gettingStartedSections = listOf(
-    "Bring a compatible project" to "Use a BLE-capable ESP32 running firmware that implements the PhysicalLink sensor service and capability format. The included soil-monitor example uses a BME280 and an analog soil sensor. Ordinary BLE gadgets are not automatically supported.",
+    "Bring a PhysicalLink device" to "Use a BLE-capable ESP32 running PhysicalLink firmware. Check wiring, power, and sensor initialization before scanning. Ordinary BLE gadgets are not automatically supported.",
     "Prepare the firmware" to "Example source and its PlatformIO build configuration are in this project's firmware/soil-monitor folder. Build and flash matching firmware using your development tools; the Android app does not flash boards. Check wiring, power, and sensor initialization before scanning.",
-    "Make your project discoverable" to "Compatible firmware must advertise the name expected by the app; Device details lists the current discovery requirements. Keep the board nearby, powered, and advertising. Arbitrary Bluetooth devices are not supported. Advertising a matching name alone does not guarantee compatible firmware.",
-    "Discover sensors" to "After you connect, PhysicalLink reads a versioned JSON description of sensor IDs, characteristic UUIDs, data types, and units. It then reads or subscribes to the described sensor characteristics as supported. Device details shows what was actually discovered; arbitrary BLE profiles are not supported.",
-    "Connect your board" to "From Devices, tap Scan, then select your project. Permissions are requested only when needed for scanning. Keep the board nearby while connecting. If another phone is connected to the board, disconnect it first. Nothing connects automatically.",
+    "Make your device discoverable" to "PhysicalLink firmware must advertise the PhysicalLink service; Device details lists the discovery requirements. Keep the board nearby, powered, and advertising. Arbitrary Bluetooth devices are not supported.",
+    "Discover sensors" to "After you connect, PhysicalLink loads registered sensor names and units, synchronizes readings, and opens your dashboard automatically. Device Diagnostics shows protocol details and sensor availability.",
+    "Connect your board" to "From Devices, tap Scan, then select your device. Permissions are requested only when needed for scanning. Keep the board nearby while connecting. If another phone is connected to the board, disconnect it first. Nothing connects automatically.",
     "Make the dashboard yours" to "Use Edit dashboard to drag widgets or open a widget's settings. Move up/down is an alternative to dragging. Choose Value, Chart, Gauge, or Range for numeric sensors. Set explicit bounds for Gauge and Range. Resize, duplicate, hide, or restore widgets using Add widget. Done keeps your layout; Reset layout asks before clearing customization.",
     "Read the status" to "Live means a recent successful sensor update; a connected board can still have stale readings. Charts contain only current-session samples and restart after reconnecting. Layouts are saved locally per device. Demo Mode uses clearly labeled simulated readings and a separate saved layout.",
-    "If a scan is empty or fails" to "Check that Bluetooth is on and your compatible board is powered and advertising with the expected name. Stop other Bluetooth scans, wait a moment, and retry. On Android 11 or earlier, Location permission and the system Location setting may be needed for BLE scans. Open Device details for the scan diagnostic.",
-    "If connecting fails" to "Check board power and range, then retry. If the service, a sensor characteristic, or capability JSON is missing or invalid, flash matching PhysicalLink firmware and restart the board. Device details preserves the available error message; failed discovery cannot provide a sensor list. Try Demo to explore without compatible hardware."
+    "If a scan is empty or fails" to "Check that Bluetooth is on and your compatible board is powered and advertising the PhysicalLink service. Stop other Bluetooth scans, wait a moment, and retry. On Android 11 or earlier, Location permission and the system Location setting may be needed for BLE scans. Open Device details for the scan diagnostic.",
+    "If connecting fails" to "Check board power and range, then retry. If the PhysicalLink service or sensor metadata is missing or invalid, flash matching PhysicalLink firmware and restart the board. Device details preserves the available error message; failed discovery cannot provide a sensor list. Try Demo to explore without compatible hardware."
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -44,10 +44,10 @@ internal fun GettingStarted(onDismiss: () -> Unit, onReplayIntroduction: () -> U
 }
 
 @Composable
-internal fun PermissionExplanation(legacy: Boolean, onDismiss: () -> Unit, onContinue: () -> Unit) {
-    AlertDialog(onDismissRequest = onDismiss, title = { Text("Find your sensor project") },
-        text = { Text(if (legacy) "Android needs Location permission to scan for nearby BLE projects. You may also need to enable the system Location setting. Demo Mode works without this permission."
-            else "Nearby devices permission lets PhysicalLink scan for and connect to compatible BLE sensor projects. Demo Mode works without this permission.") },
+internal fun PermissionExplanation(requiresLocation: Boolean, onDismiss: () -> Unit, onContinue: () -> Unit) {
+    AlertDialog(onDismissRequest = onDismiss, title = { Text("Find your PhysicalLink device") },
+        text = { Text(if (requiresLocation) "Android needs Location permission to scan for nearby PhysicalLink devices. You may also need to enable the system Location setting. Demo Mode works without this permission."
+            else "Nearby devices permission lets PhysicalLink scan for and connect to PhysicalLink devices. Demo Mode works without this permission.") },
         confirmButton = { TextButton(onClick = onContinue) { Text("Continue") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Not now") } })
 }

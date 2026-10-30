@@ -24,7 +24,7 @@ internal fun DeviceDetails(
             SelectionContainer {
                 Column(Modifier.fillMaxWidth().heightIn(max = 460.dp).verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    DetailField("Project", name?.takeIf { it.isNotBlank() } ?: "No project selected")
+                    DetailField("Device", name?.takeIf { it.isNotBlank() } ?: "No device selected")
                     DetailField("Bluetooth address", address ?: "Not available")
                     if (rssi != null) DetailField("Signal at last scan", "$rssi dBm (not a live measurement)")
                     DetailField("Connection", when (connectionState) {
@@ -34,7 +34,7 @@ internal fun DeviceDetails(
                     if (connectionState is ConnectionState.Error || connectionState == ConnectionState.ConnectionLost)
                         DetailField("Connection guidance", connectionHelp(connectionState))
                     if (scanState != null) DetailField("Scan", when (scanState) {
-                        ScanState.Scanning -> "Scanning for compatible projects"
+                        ScanState.Scanning -> "Scanning for PhysicalLink devices"
                         ScanState.Idle -> "Not scanning"
                         is ScanState.Error -> "Scan failed"
                     })

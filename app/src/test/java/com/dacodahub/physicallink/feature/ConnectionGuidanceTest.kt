@@ -13,6 +13,8 @@ class ConnectionGuidanceTest {
             "Bluetooth permission denied" to "Bluetooth permission needed",
             "Service discovery timed out" to "Connection timed out",
             "Invalid capability description" to "Firmware compatibility issue",
+            "Invalid sensor metadata: bad manifest" to "Firmware compatibility issue",
+            "Invalid PhysicalLink service" to "Firmware compatibility issue",
             "Device disconnected before connection completed" to "Device unavailable"
         )
         cases.forEach { (error, title) ->
@@ -22,4 +24,12 @@ class ConnectionGuidanceTest {
         }
         assertNotEquals(connectionLabel(ConnectionState.Disconnected), connectionLabel(ConnectionState.ConnectionLost))
     }
+    @Test fun `synchronization errors explain recovery without exposing wire details`() {
+        val raw = "State synchronization failed: Capture deadline exceeded"
+        val help = connectionHelp(ConnectionState.Error(raw))
+        assertTrue(help.contains("reconnect"))
+        assertTrue(help.contains("synchronized"))
+        assertFalse(help.contains("Capture deadline"))
+    }
+
 }

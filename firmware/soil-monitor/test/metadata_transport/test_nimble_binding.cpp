@@ -63,8 +63,8 @@ bool startup() {
     }
     stage=0;failStage=0;
     BleTransport device;CHECK(begin(device,sensors)==R::Ok);
-    CHECK(deviceName=="PhysicalLink V2" && scanName==deviceName && completeName);
-    CHECK(completeService && advertisingSize==21 && scanResponseSize==17);
+    CHECK(deviceName=="PhysicalLink" && scanName==deviceName && completeName);
+    CHECK(completeService && advertisingSize==21 && scanResponseSize==14);
     CHECK(advertisingSize<=31 && scanResponseSize<=31);
     CHECK(definitions[0].type==BLE_GATT_SVC_TYPE_PRIMARY && definitions[1].type==0);
     CHECK(definitions[0].characteristics[0].flags==BLE_GATT_CHR_F_READ);

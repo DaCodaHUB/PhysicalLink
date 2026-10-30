@@ -10,7 +10,7 @@ class SensorFormattingTest {
         assertEquals("23.40", formatSensorValue("23.4", "number"))
         assertEquals("42", formatSensorValue("42.000", "number"))
         assertEquals("-1.24", formatSensorValue("-1.235", "number"))
-        assertEquals("0", formatSensorValue("-0.001", "number"))
+        assertEquals("-0.001", formatSensorValue("-0.001", "number"))
     }
 
     @Test
@@ -31,6 +31,15 @@ class SensorFormattingTest {
         assertEquals("Air Temperature", sensorName("airTemperature"))
         assertEquals("Light level", sensorName("light-level"))
     }
+    @Test fun `small measurements preserve sign and significant digits without changing input`() {
+        val readings = mapOf("0.0000123456" to "0.0000123", "-0.000000123456" to "-1.23E-7",
+            "0.0049" to "0.0049", "-0.0049" to "-0.0049", "0.0" to "0")
+        readings.forEach { (raw, expected) -> assertEquals(expected, formatSensorValue(raw, "number")) }
+        assertEquals("1.235", formatSensorValue("1.23456", "number", 3))
+        assertEquals("-12", formatSensorValue("-12.4", "number", 0))
+        assertEquals("0.00123", formatSensorValue("0.00123456789", "number", 0))
+    }
+
     @Test fun `extreme exponents remain bounded text without BigDecimal expansion`() {
         for (value in listOf("1e2147483647", "1e-2147483647", "9e1000000", "1e-1000000")) {
             assertEquals(value, formatSensorValue(value, "number"))

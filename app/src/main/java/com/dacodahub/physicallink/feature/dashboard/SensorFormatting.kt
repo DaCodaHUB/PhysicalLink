@@ -1,5 +1,6 @@
 package com.dacodahub.physicallink.feature.dashboard
 
+import java.math.MathContext
 import java.math.RoundingMode
 import java.util.Locale
 
@@ -24,6 +25,10 @@ internal fun formatSensorValue(value: String?, type: String, precision: Int = 2)
     if (number.precision() > 64 || number.scale().toLong() !in -64L..64L) return text
     val rounded = try { number.setScale(precision.coerceIn(0, 6), RoundingMode.HALF_UP) }
         catch (_: ArithmeticException) { return text }
+    // Keep small nonzero measurements meaningful without changing stored values or history.
+    if (rounded.signum() == 0 && number.signum() != 0) {
+        return number.round(MathContext(3, RoundingMode.HALF_UP)).stripTrailingZeros().toString()
+    }
     return if (rounded.stripTrailingZeros().scale() <= 0) {
         rounded.setScale(0).toPlainString()
     } else {

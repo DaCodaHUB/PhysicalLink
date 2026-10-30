@@ -83,7 +83,7 @@ internal fun DashboardContent(
     val currentActions by rememberUpdatedState(actions)
     fun clearDrag() { draggingId = null; targetId = null; movement = Offset.Zero }
     val connected = connection == ConnectionState.Connected
-    val name = dashboard.deviceName?.takeIf { it.isNotBlank() } ?: capabilities?.device?.takeIf { it.isNotBlank() } ?: "Sensor project"
+    val name = dashboard.deviceName?.takeIf { it.isNotBlank() } ?: capabilities?.device?.takeIf { it.isNotBlank() } ?: "PhysicalLink device"
     LaunchedEffect(dashboard.isEditing, visibleIds, connection) {
         if (!dashboard.isEditing || draggingId !in visibleIds || !connected) clearDrag()
         if (!dashboard.isEditing || !connected) { showAdd = false; showReset = false; configuringId = null }
@@ -148,11 +148,11 @@ internal fun DashboardContent(
                                 when {
                                     !connected -> {
                                         DashboardNotice(if (connection == ConnectionState.Connecting || connection == ConnectionState.Discovering)
-                                            "Connecting to your project" else "Return to Devices to reconnect.",
+                                            "Connecting to your device" else "Return to Devices to reconnect.",
                                             progress = connection == ConnectionState.Connecting || connection == ConnectionState.Discovering)
                                     }
                                     dashboard.loadingLayout -> DashboardNotice("Loading your saved dashboard", progress = true)
-                                    dashboard.discovering -> DashboardNotice("Finding your project's sensors", progress = true)
+                                    dashboard.discovering -> DashboardNotice("Loading your device's sensors", progress = true)
                                     dashboard.widgets.isEmpty() -> DashboardNotice(if (dashboard.hiddenWidgets.isNotEmpty())
                                         "Your widgets are hidden. Edit dashboard to restore them." else "No sensors available. Check Device details.")
                                 }

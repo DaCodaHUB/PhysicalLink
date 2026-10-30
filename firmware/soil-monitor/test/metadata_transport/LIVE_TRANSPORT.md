@@ -16,7 +16,7 @@ All UUIDs have suffix `-7c42-4f9d-9d25-8a639eab5120`:
 | Control | b89e2002 | WRITE with response |
 | State/Live | b89e2003 | READ + NOTIFY, CCCD 2902 |
 
-GAP/scan-response name remains `PhysicalLink V2`; discovery uses the service UUID.
+GAP/scan-response name is `PhysicalLink`; discovery uses the service UUID.
 The validated default MTU remains 23. One peer/ATT bearer is supported (EATT off).
 NimBLE is pinned at 2.5.1 because raw ATT offset/pinning behavior was audited there.
 
