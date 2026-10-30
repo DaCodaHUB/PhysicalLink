@@ -17,5 +17,5 @@
 local.properties
 /.kotlin/
 firmware/esp32sensors/docs/
-firmware/ConsumerTest/package/PhysicalLink.zip
+firmware/ConsumerTest/package/
 firmware/releases/
