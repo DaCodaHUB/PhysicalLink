@@ -25,8 +25,11 @@ class OnboardingUiTest {
                 onDismissIntroduction = { welcome = false }, onScan = { scans++ })
         } }
         compose.onNodeWithText("Welcome to PhysicalLink").assertExists()
+        compose.onNodeWithTag("device-overview").performScrollToNode(hasText("Try Demo"))
         compose.onNodeWithText("Try Demo").assertExists()
+        compose.onNodeWithTag("device-overview").performScrollToNode(hasText("Connect a Device"))
         compose.onNodeWithText("Connect a Device").assertExists()
+        compose.onNodeWithTag("device-overview").performScrollToNode(hasContentDescription("Scan for devices"))
         compose.onNodeWithContentDescription("Scan for devices").performClick()
         assertEquals(1, scans)
         compose.onNodeWithText("Welcome to PhysicalLink").assertExists()
@@ -41,6 +44,7 @@ class OnboardingUiTest {
             DevicesContent(emptyList(), ConnectionState.Disconnected, ScanState.Idle, permissionDenied = true,
                 showIntroduction = true, onDismissIntroduction = { dismissed++ }, onTryDemo = { demos++ }, onScan = { scans++ })
         } }
+        compose.onNodeWithTag("device-overview").performScrollToNode(hasText("Try Demo"))
         compose.onNodeWithText("Try Demo").performScrollTo().performClick()
         assertEquals(1, dismissed); assertEquals(1, demos); assertEquals(0, scans)
     }
@@ -77,11 +81,13 @@ class OnboardingUiTest {
             if (visible) PermissionExplanation(false, onDismiss = { visible = false }, onContinue = { proceeded++; visible = false })
         } }
         compose.onNodeWithText("Find your PhysicalLink device").assertDoesNotExist()
+        compose.onNodeWithTag("device-overview").performScrollToNode(hasContentDescription("Scan for devices"))
         compose.onNodeWithContentDescription("Scan for devices").performClick()
         compose.onNodeWithText("Nearby devices permission", substring = true).assertExists()
         assertEquals(0, proceeded)
         compose.onNodeWithText("Not now").performClick()
         assertEquals(0, proceeded)
+        compose.onNodeWithTag("device-overview").performScrollToNode(hasContentDescription("Scan for devices"))
         compose.onNodeWithContentDescription("Scan for devices").performClick()
         compose.onNodeWithText("Continue").performClick()
         assertEquals(1, proceeded)

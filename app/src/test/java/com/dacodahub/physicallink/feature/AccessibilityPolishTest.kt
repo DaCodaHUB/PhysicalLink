@@ -60,7 +60,7 @@ class AccessibilityPolishTest {
                         val widget = DashboardWidget("range", WidgetType.RANGE, SensorSource("board", "temperature"),
                             settings = WidgetSettings(minimum = 123456789.0, maximum = 123456799.0))
                         DashboardWidgetCard(DashboardWidgetState(widget, metadata.capabilities.single(), "123456790",
-                            SensorTimeline(lastSuccessfulMs = 0, latestNumeric = 123456790.0, latestValid = true)))
+                            SensorTimeline(lastSuccessfulMs = 0, latestNumeric = 123456790.0, latestValid = true), ReadingFreshness.LIVE))
                     } }
                 }
             }

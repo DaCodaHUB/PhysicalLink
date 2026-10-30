@@ -86,7 +86,7 @@ class DashboardUiTest {
                 onScan = { started++ }, onStopScan = { stopped++ })
         } }
         assertEquals(0, started)
-        compose.onNodeWithText("No devices found yet").assertIsDisplayed()
+        compose.onNodeWithText("No device connected").assertIsDisplayed()
         compose.onNodeWithContentDescription("Scan for devices").performClick()
         assertEquals(1, started)
         compose.runOnIdle { scan = ScanState.Scanning }
@@ -118,6 +118,7 @@ class DashboardUiTest {
             DevicesContent(listOf(device), ConnectionState.Disconnected, ScanState.Idle, onConnect = { selected = it })
         } }
         assertNull(selected)
+        compose.onNodeWithTag("device-overview").performScrollToNode(hasText("Strong signal"))
         compose.onNodeWithText("Strong signal").assertExists()
         compose.onNodeWithText("dBm", substring = true).assertDoesNotExist()
         compose.onNodeWithContentDescription("Details for Maker project").performClick()
@@ -217,7 +218,9 @@ class DashboardUiTest {
     @Test fun `live values update during editing without closing settings`() {
         var values by mutableStateOf(mapOf("temperature" to "12"))
         compose.setContent { PhysicalLinkTheme(dynamicColor = false) {
-            DashboardContent(ConnectionState.Connected, dashboardState("board", capabilities, values, null).copy(isEditing = true),
+            DashboardContent(ConnectionState.Connected, dashboardState("board", capabilities, values, null,
+                SensorHistorySnapshot("board", 1, true, mapOf(SensorSource("board", "temperature") to
+                    SensorTimeline(lastSuccessfulMs = 0, latestNumeric = values.getValue("temperature").toDouble(), latestValid = true))), 0).copy(isEditing = true),
                 "board", capabilities)
         } }
         configure()
@@ -273,7 +276,7 @@ class DashboardUiTest {
             DashboardContent(ConnectionState.Connected, dashboardState("board", capabilities, mapOf("temperature" to "42"),
                 DashboardLayout(listOf(widget)), history, 20000, true), "board", capabilities)
         } }
-        compose.onNodeWithContentDescription("42 \u00b0C").assertExists()
+        compose.onNodeWithContentDescription("Last known: 42 \u00b0C").assertExists()
         compose.onNodeWithText("Above configured maximum").assertExists()
         compose.onNodeWithText("Stale - last update 19s ago").assertExists()
         compose.onNodeWithText("Live").assertDoesNotExist()
@@ -290,12 +293,14 @@ class DashboardUiTest {
             else DashboardContent(ConnectionState.Connected, dashboardState(demoId, demoMetadata, emptyMap(), null),
                 demoId, demoMetadata, actions = DashboardActions(devices = { demo = false }, disconnect = { radioActions++ }), isDemo = true)
         } }
-        compose.onNodeWithText("Try Demo").performClick()
+        compose.onNodeWithTag("device-overview").performScrollToNode(hasText("Try Demo"))
+        compose.onNodeWithText("Try Demo").performScrollTo().performClick()
         compose.onNodeWithText("Demo Sensor Station").assertExists()
         compose.onNodeWithText("Demo Mode - Simulated readings").assertExists()
         compose.onNodeWithText("These readings are simulated. Exit Demo to connect your own ESP32.").assertExists()
         compose.onNodeWithContentDescription("More device actions").assertDoesNotExist()
         compose.onNodeWithText("Exit Demo").performClick()
+        compose.onNodeWithTag("device-overview").performScrollToNode(hasText("Try Demo"))
         compose.onNodeWithText("Try Demo").assertExists()
         assertEquals(0, radioActions)
     }
@@ -312,6 +317,7 @@ class DashboardUiTest {
             else DashboardContent(ConnectionState.Connected, dashboardState(demoId, demoMetadata, emptyMap(), null).copy(isEditing = editing),
                 demoId, demoMetadata, actions = DashboardActions(devices = { demo = false }, editing = { editing = it }), isDemo = true)
         } }
+        compose.onNodeWithTag("device-overview").performScrollToNode(hasText("Try Demo"))
         compose.onNodeWithText("Try Demo").performScrollTo().performClick()
         compose.onNodeWithContentDescription("Edit dashboard").performClick()
         compose.onNodeWithText("Done").assertExists()
@@ -348,9 +354,10 @@ class DashboardUiTest {
         compose.setContent { PhysicalLinkTheme(dynamicColor = false) {
             DevicesContent(emptyList(), ConnectionState.Disconnected, scan)
         } }
-        compose.onNodeWithText("No devices found yet").assertExists()
+        compose.onNodeWithText("No device connected").assertExists()
         compose.runOnIdle { scan = ScanState.Scanning }
         compose.runOnIdle { scan = ScanState.Idle }
+        compose.onNodeWithTag("device-overview").performScrollToNode(hasText("No compatible devices found"))
         compose.onNodeWithText("No compatible devices found").assertExists()
     }
 

@@ -29,6 +29,7 @@ internal fun WidgetHeader(title: String, controls: WidgetControls?) {
                     contentDescription = "Drag $title widget ${controls.index + 1}. Hold to move; configuration also provides Move up and Move down."
                 }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     ActionGlyph(Glyph.DRAG, Modifier.size(20.dp))
+                    Text("Move", style = MaterialTheme.typography.labelSmall)
                 }
                 IconButton(onClick = controls.configure, enabled = controls.enabled,
                     modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp).semantics { contentDescription = "Configure $title widget ${controls.index + 1}" }) {

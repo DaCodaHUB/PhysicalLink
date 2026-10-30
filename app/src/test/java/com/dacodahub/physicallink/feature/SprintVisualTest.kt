@@ -1,4 +1,4 @@
-﻿package com.dacodahub.physicallink.feature
+package com.dacodahub.physicallink.feature
 
 import android.app.Application
 import android.graphics.Bitmap
@@ -37,7 +37,7 @@ class SprintVisualTest {
             file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
         }
     }
-    private fun dashboard(dark: Boolean, large: Boolean = false) {
+    private fun dashboard(dark: Boolean, large: Boolean = false, editing: Boolean = false, statuses: Boolean = false, unavailable: Boolean = false) {
         fun state(type: WidgetType, id: String, label: String, unit: String, value: Double) = DashboardWidgetState(
             DashboardWidget(id, type, SensorSource("fixture", id), columnSpan = if (type == WidgetType.CHART || type == WidgetType.RANGE) 2 else 1,
                 settings = WidgetSettings(minimum = -10.0, maximum = 40.0)),
@@ -45,7 +45,7 @@ class SprintVisualTest {
             SensorTimeline((0..60).map { NumericSample(it * 1000L, value + (it % 10) * 0.1, 0) }, 60000, value, true),
             ReadingFreshness.LIVE, 60000)
         val widgets = listOf(
-            state(WidgetType.CHART, "a", if (large) "Long arbitrary project measurement channel" else "Sensor A", if (large) "widgets/(m²·s)" else "u", 3.72),
+            state(WidgetType.CHART, "a", if (large) "Long arbitrary project measurement channel" else "Sensor A", if (large) "widgets/(m\u00B2\u00B7s)" else "u", 3.72),
             state(WidgetType.VALUE, "b", "Sensor B", "custom", -0.0084),
             state(WidgetType.GAUGE, "c", "Sensor C", "u", 21.6),
             state(WidgetType.RANGE, "d", "Sensor D", "u", 12.0))
@@ -53,14 +53,18 @@ class SprintVisualTest {
             val density = LocalDensity.current
             CompositionLocalProvider(LocalDensity provides Density(density.density, if (large) 1.6f else 1f)) {
                 PhysicalLinkTheme(darkTheme = dark) {
-                    DashboardContent(ConnectionState.Connected, DashboardState(deviceName = "My project", discovering = false, widgets = widgets))
+                    DashboardContent(ConnectionState.Connected, DashboardState(deviceName = "My project", discovering = false, isEditing = editing,
+                        widgets = if (statuses) widgets.mapIndexed { index, item -> item.copy(freshness = if (index == 0 && !unavailable) ReadingFreshness.STALE else ReadingFreshness.UNAVAILABLE,
+                            timeline = item.timeline?.copy(lastSuccessfulMs = 40000,
+                                samples = item.timeline.samples.map { it.copy(timeMs = it.timeMs - 20000) })) } else widgets))
                 }
             }
         }
-        compose.onNodeWithText("Now").assertExists()
-        val name = if (large) "large-font" else if (dark) "dark" else "light"
+        if (!editing) compose.onNodeWithText("Now").assertExists()
+        else compose.onNodeWithText("Make it yours").assertExists()
+        val name = if (unavailable) "unavailable-${if (dark) "dark" else "light"}" else if (large && dark) "large-font-dark" else if (editing) "edit-${if (dark) "dark" else "light"}" else if (statuses) "status-${if (dark) "dark" else "light"}" else if (large) "large-font" else if (dark) "dark" else "light"
         save(name)
-        compose.onNodeWithTag("dashboard-grid").performScrollToIndex(3)
+        compose.onNodeWithTag("dashboard-grid").performScrollToIndex(if (editing) 4 else 3)
         compose.onNodeWithText("Sensor D").assertExists()
         save("$name-range")
     }
@@ -75,13 +79,29 @@ class SprintVisualTest {
         compose.onNodeWithText("Disconnect").assertExists()
         save(if (dark) "devices-dark" else "devices-light")
     }
+    @Test fun discoveryActions() {
+        compose.setContent { PhysicalLinkTheme {
+            DevicesContent(emptyList(), ConnectionState.Disconnected, ScanState.Idle, demoExplored = true)
+        } }
+        compose.onNodeWithContentDescription("Scan for devices").assertIsDisplayed()
+        compose.onNodeWithTag("device-overview").performScrollToNode(hasText("Try Demo"))
+        compose.onNodeWithText("Try Demo").assertIsDisplayed()
+        save("devices-discovery")
+    }
     @Test fun light() = dashboard(false)
     @Test fun dark() = dashboard(true)
+    @Test fun largeFontDark() = dashboard(true, true)
+    @Test fun unavailableLight() = dashboard(false, statuses = true, unavailable = true)
+    @Test fun unavailableDark() = dashboard(true, statuses = true, unavailable = true)
     @Test fun largeFont() = dashboard(false, true)
+    @Test fun editingLight() = dashboard(false, editing = true)
+    @Test fun editingDark() = dashboard(true, editing = true)
+    @Test fun statusLight() = dashboard(false, statuses = true)
+    @Test fun statusDark() = dashboard(true, statuses = true)
     @Test fun devicesLight() = devices(false)
     @Test fun devicesDark() = devices(true)
     @Test fun `accent assignment is stable and bounded for opaque identities`() {
-        listOf("", "arbitrary-id", "-2147483648", "測定").forEach {
+        listOf("", "arbitrary-id", "-2147483648", "Ã¦Â¸Â¬Ã¥Â®Å¡").forEach {
             assertTrue(widgetAccentIndex(it) in 0..2)
             assertEquals(widgetAccentIndex(it), widgetAccentIndex(it))
         }

@@ -8,9 +8,9 @@ internal fun chartRenderTime(nowMs: Long, samples: List<NumericSample>): Long =
     maxOf(nowMs / 250 * 250, minOf(nowMs, samples.lastOrNull()?.timeMs ?: 0))
 
 internal fun chartCurrentValue(state: DashboardWidgetState): String {
-    val value = state.timeline?.takeIf { it.latestValid }?.latestNumeric
+    val value = readingForDisplay(state)?.toDoubleOrNull()
     return if (value == null || !value.isFinite()) "Current value unavailable"
-    else "Current: ${formatSensorValue(value.toString(), "number", state.widget.settings.precision)} ${sensorUnit(state.capability?.unit.orEmpty())}".trim()
+    else "${if (displayedFreshness(state) == ReadingFreshness.STALE) "Last known" else "Current"}: ${formatSensorValue(value.toString(), "number", state.widget.settings.precision)} ${sensorUnit(state.capability?.unit.orEmpty())}".trim()
 }
 
 /** Axis endpoints remain distinct even when the chosen reading precision rounds both to zero. */

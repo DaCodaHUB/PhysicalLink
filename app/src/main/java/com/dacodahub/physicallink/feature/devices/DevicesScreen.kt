@@ -8,6 +8,7 @@ import android.content.pm.PackageManager
 import androidx.core.net.toUri
 import android.os.Build
 import android.provider.Settings
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
@@ -21,6 +22,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.style.TextOverflow
@@ -48,6 +50,9 @@ fun DevicesScreen(onOpenDashboard: () -> Unit, onTryDemo: () -> Unit = {}, viewM
     val capabilities by viewModel.capabilities.collectAsStateWithLifecycle()
     val live by viewModel.liveState.collectAsStateWithLifecycle()
     val metadata by viewModel.manifest.collectAsStateWithLifecycle()
+    LaunchedEffect(connection, capabilities, showIntroduction) {
+        if (connection == ConnectionState.Connected && capabilities != null && showIntroduction) viewModel.dismissIntroduction()
+    }
     var permissionDenied by rememberSaveable { mutableStateOf(false) }
     var openWhenConnected by rememberSaveable { mutableStateOf(false) }
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { viewModel.stopScan() }
@@ -135,32 +140,38 @@ internal fun DevicesContent(
     val selected = devices.find { it.address == deviceId }
     val connected = connection == ConnectionState.Connected
     val connecting = connection == ConnectionState.Connecting || connection == ConnectionState.Discovering
-    val name = capabilities?.device?.takeIf { it.isNotBlank() } ?: selected?.name ?: "PhysicalLink device"
+    val name = capabilities?.takeIf { connected }?.device?.takeIf { it.isNotBlank() } ?: selected?.name ?: "PhysicalLink device"
     val canScan = !connected && !connecting
     LaunchedEffect(scan) { if (scan == ScanState.Scanning) hasScanned = true }
     LaunchedEffect(connection) { if (!connecting) retrying = false }
+
+    var explainDiscovery by rememberSaveable { mutableStateOf(false) }
+    BackHandler(enabled = explainDiscovery) { explainDiscovery = false }
+    if (explainDiscovery) AlertDialog(onDismissRequest = { explainDiscovery = false },
+        title = { Text("Find another device") },
+        text = { Text("PhysicalLink connects to one device at a time. Disconnect this device, then tap Scan for devices. Your dashboard layout is saved.") },
+        confirmButton = { TextButton(onClick = { explainDiscovery = false; onCancel() }) { Text("Disconnect device") } },
+        dismissButton = { TextButton(onClick = { explainDiscovery = false }) { Text("Keep connected") } })
 
     Scaffold(topBar = {
         TopAppBar(title = {
             Column {
                 Text("PhysicalLink", style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text("Devices", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Device overview", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }, actions = {
-            if (canScan) ScanControls(onScan, onStopScan, scan == ScanState.Scanning)
+
+            IconButton(onClick = { showAppearance = true }, modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp).semantics { contentDescription = "Appearance" }) { ActionGlyph(Glyph.SETTINGS) }
             TextButton(onClick = { showGuide = true }, modifier = Modifier.semantics { contentDescription = "Getting Started" }) { Text("Help") }
             IconButton(onClick = { detailsDevice = selected; showDetails = true },
-                modifier = Modifier.semantics { contentDescription = "Device details" }) { ActionGlyph(Glyph.INFO) }
+                modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp).semantics { contentDescription = "Device details" }) { ActionGlyph(Glyph.INFO) }
         })
     }) { padding ->
         Box(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding), contentAlignment = Alignment.TopCenter) {
-            LazyColumn(Modifier.widthIn(max = 840.dp).fillMaxSize(), contentPadding = PaddingValues(16.dp),
+            LazyColumn(Modifier.testTag("device-overview").widthIn(max = 840.dp).fillMaxSize(), contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 item {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                        Text("Your connections", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
-                        TextButton(onClick = { showAppearance = true }) { Text("Appearance") }
-                    }
+                    Text("Your connections", Modifier.semantics { heading() }, style = MaterialTheme.typography.titleMedium)
                 }
                 if (connecting) item {
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -179,28 +190,19 @@ internal fun DevicesContent(
                             onOpenDashboard, onDiagnostic, onCancel)
                     }
                 }
-                if (connected || connecting) item {
-                    TextButton(onClick = onTryDemo, modifier = Modifier.heightIn(min = 48.dp)) { Text("Try Demo") }
-                }
-                if (!connected && !connecting) item {
-                    if (showIntroduction || replayIntroduction) StatePanel("Welcome to PhysicalLink", "Connect your PhysicalLink device and turn its readings into a dashboard you can customize.") {
-                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Button(onClick = { dismissIntroduction(); onTryDemo() }) { Text("Try Demo") }
-                            OutlinedButton(onClick = { dismissIntroduction(); onScan() }, enabled = canScan) { Text("Connect a Device") }
-                        }
+                if (!connected && !connecting && connection !is ConnectionState.Error && connection != ConnectionState.ConnectionLost) item {
+                    if (showIntroduction || replayIntroduction) StatePanel("Welcome to PhysicalLink", "Connect a project to create a dashboard from its sensors.") {
+                        Button(onClick = { dismissIntroduction(); onScan() }) { Text("Connect a Device") }
                         TextButton(onClick = ::dismissIntroduction) { Text("Not now") }
-                    } else if (demoExplored) {
-                        TextButton(onClick = onTryDemo, modifier = Modifier.heightIn(min = 48.dp)) { Text("Try Demo") }
-                    } else StatePanel("Explore without hardware", "Try simulated sensors and customize a dashboard. No Bluetooth permission needed.") {
-                        FilledTonalButton(onClick = { dismissIntroduction(); onTryDemo() }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Try Demo") }
-                    }
+                    } else StatePanel("No device connected", "Your sensor projects live here. Find a device below or explore Demo mode.")
                 }
                 if (canScan) {
                     if (!permissionDenied && scan !is ScanState.Error && (connection is ConnectionState.Error || connection == ConnectionState.ConnectionLost)) item {
                         StatePanel(if (connection == ConnectionState.ConnectionLost) "Device disconnected" else connectionFailureTitle(connection),
-                            connectionHelp(connection), error = true) {
+                            connectionHelp(connection), error = true,
+                            permissionWarning = (connection as? ConnectionState.Error)?.message?.contains("permission", true) == true) {
                             if ((connection as? ConnectionState.Error)?.message?.contains("permission", true) == true)
-                                TextButton(onClick = onSettings) { Text("Open app settings") }
+                                TextButton(onClick = onSettings, modifier = Modifier.heightIn(min = 48.dp)) { Text("Open app settings") }
                             else if (!deviceId.isNullOrBlank()) OutlinedButton(onClick = {
                                 retrying = true
                                 onConnect(deviceId)
@@ -209,27 +211,44 @@ internal fun DevicesContent(
                     }
                     if (permissionDenied || scan is ScanState.Error) item {
                         StatePanel("Scanning needs attention", if (permissionDenied) "Allow Nearby devices permission in app settings, then scan again. On Android 11 or earlier, allow Location."
-                            else scanHelp((scan as ScanState.Error).message), error = true) {
+                            else scanHelp((scan as ScanState.Error).message), error = true,
+                            permissionWarning = permissionDenied || (scan as? ScanState.Error)?.message?.contains("permission", true) == true) {
                             if (permissionDenied || (scan as? ScanState.Error)?.message?.contains("permission", true) == true)
-                                TextButton(onClick = onSettings) { Text("Open app settings") }
+                                TextButton(onClick = onSettings, modifier = Modifier.heightIn(min = 48.dp)) { Text("Open app settings") }
                         }
                     }
-                    if (scan == ScanState.Scanning) item {
-                        StatePanel("Looking for nearby devices", "Scanning stops after 15 seconds.", progress = true)
-                    }
-                    if (devices.isEmpty() && scan == ScanState.Idle && !permissionDenied && connection !is ConnectionState.Error && connection != ConnectionState.ConnectionLost) item {
-                        StatePanel(if (hasScanned) "No compatible devices found" else "No devices found yet", "Power on your device running PhysicalLink firmware. Keep it nearby and tap Scan. See Help if it does not appear.") {
-                            Button(onClick = onScan, modifier = Modifier.fillMaxWidth()) { Text("Scan for devices") }
-                        }
+                }
+                item { Text("Explore", Modifier.semantics { heading() }, style = MaterialTheme.typography.titleMedium) }
+                item {
+                    ExploreDiscovery(connected, connecting, scan == ScanState.Scanning,
+                        onFind = { if (connected) explainDiscovery = true else onScan() }, onStop = onStopScan)
+                }
+
+                if (canScan) {
+                    if (hasScanned && devices.isEmpty() && scan == ScanState.Idle && !permissionDenied && connection !is ConnectionState.Error && connection != ConnectionState.ConnectionLost) item {
+                        StatePanel(if (hasScanned) "No compatible devices found" else "No devices found yet", "Power on your device running PhysicalLink firmware. Keep it nearby and tap Scan. See Help if it does not appear.")
                     }
                     if (devices.isNotEmpty()) {
-                        item { Text("Nearby devices", Modifier.semantics { heading() }, style = MaterialTheme.typography.titleMedium) }
+                        item {
+                            Text("Nearby devices", Modifier.semantics { heading() }, style = MaterialTheme.typography.titleMedium)
+                            if (scan != ScanState.Scanning) Text("Seen in the last scan. Availability may change.", style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                         items(devices, key = { it.address }) { device ->
                             DeviceCard(device, onConnect = { onConnect(device.address) },
                                 onDetails = { detailsDevice = device; showDetails = true })
                         }
                     }
                 }
+                if (!canScan && devices.any { it.address != deviceId }) {
+                    item { Text("Other devices", Modifier.semantics { heading() }, style = MaterialTheme.typography.titleMedium) }
+                    item { Text("Seen in the last scan. Disconnect before connecting another device.", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                    items(devices.filter { it.address != deviceId }, key = { "other:${it.address}" }) { device ->
+                        DeviceCard(device, onConnect = {}, onDetails = { detailsDevice = device; showDetails = true }, enabled = false)
+                    }
+                }
+                item { ExploreDemo { dismissIntroduction(); onTryDemo() } }
             }
         }
     }
@@ -250,15 +269,18 @@ internal fun DevicesContent(
 @Composable
 private fun StatePanel(
     title: String, message: String, progress: Boolean = false, error: Boolean = false, featured: Boolean = false,
-    actions: @Composable ColumnScope.() -> Unit = {}
+    permissionWarning: Boolean = false, actions: @Composable ColumnScope.() -> Unit = {}
 ) {
     Surface(shape = MaterialTheme.shapes.large,
-        color = if (error) MaterialTheme.colorScheme.errorContainer else if (featured) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainer,
-        contentColor = if (error) MaterialTheme.colorScheme.onErrorContainer else if (featured) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface) {
+        color = if (permissionWarning) MaterialTheme.colorScheme.surfaceContainerLow else if (error) MaterialTheme.colorScheme.errorContainer else if (featured) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainer,
+        contentColor = if (permissionWarning) MaterialTheme.colorScheme.onSurface else if (error) MaterialTheme.colorScheme.onErrorContainer else if (featured) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface) {
         Column(Modifier.fillMaxWidth().padding(16.dp).semantics { liveRegion = LiveRegionMode.Polite },
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
             if (progress) LinearProgressIndicator(Modifier.fillMaxWidth())
-            Text(title, style = MaterialTheme.typography.titleMedium)
+            if (permissionWarning) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ActionGlyph(Glyph.INFO, Modifier.size(20.dp))
+                Text(title, style = MaterialTheme.typography.titleMedium)
+            } else Text(title, style = MaterialTheme.typography.titleMedium)
             Text(message, style = MaterialTheme.typography.bodyMedium)
             actions()
         }

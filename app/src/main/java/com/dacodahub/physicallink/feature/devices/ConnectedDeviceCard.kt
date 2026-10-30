@@ -32,7 +32,7 @@ internal fun ConnectedDeviceCard(name: String, rssi: Int?, sensorCount: Int?,
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                     Text(name, style = MaterialTheme.typography.titleLarge)
                     DeviceConnectionText(ConnectionState.Connected)
-                    val details = listOfNotNull(rssi?.let { "Last scan RSSI $it dBm" }, sensorCount?.let { "$it sensors" })
+                    val details = listOfNotNull(rssi?.let { "Last scan RSSI $it dBm" }, sensorCount?.let { sensorCountLabel(it) })
                     if (details.isNotEmpty()) Text(details.joinToString(" / "), style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
@@ -47,3 +47,5 @@ internal fun ConnectedDeviceCard(name: String, rssi: Int?, sensorCount: Int?,
         }
     }
 }
+
+internal fun sensorCountLabel(count: Int): String = if (count == 1) "1 sensor" else "$count sensors"

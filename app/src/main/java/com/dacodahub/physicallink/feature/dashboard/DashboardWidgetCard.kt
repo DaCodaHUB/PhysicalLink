@@ -7,10 +7,10 @@ import com.dacodahub.physicallink.core.designsystem.theme.LocalWidgetAccent
 import com.dacodahub.physicallink.core.designsystem.theme.widgetAccent
 import com.dacodahub.physicallink.domain.model.*
 
-internal fun freshnessLabel(state: DashboardWidgetState): String = (if (state.simulated) "Simulated - " else "") + when (state.freshness) {
+internal fun freshnessLabel(state: DashboardWidgetState): String = (if (state.simulated) "Simulated - " else "") + when (displayedFreshness(state)) {
     ReadingFreshness.LIVE -> "Live"
     ReadingFreshness.STALE -> "Stale - last update ${((state.nowMs - (state.timeline?.lastSuccessfulMs ?: state.nowMs)) / 1000).coerceAtLeast(0)}s ago"
-    ReadingFreshness.UNAVAILABLE -> if (state.timeline == null) "Unavailable - no update received this session" else "Unavailable - disconnected or invalid reading"
+    ReadingFreshness.UNAVAILABLE -> if (state.timeline == null) "Unavailable - no reading yet" else "Unavailable"
 }
 
 @Composable
@@ -18,12 +18,13 @@ internal fun DashboardWidgetCard(state: DashboardWidgetState, controls: WidgetCo
     CompositionLocalProvider(LocalWidgetAccent provides widgetAccent(state.widget.source.capabilityId)) {
     val title = (state.capability?.name ?: sensorName(state.widget.source.capabilityId))
     if (state.capability == null) {
-        WidgetContainer(title, status = "This sensor is not currently available.", controls = controls) {
+        WidgetContainer(title, status = "This sensor is not currently available.", statusIsAlert = true, controls = controls) {
             Text("--", style = MaterialTheme.typography.headlineLarge)
             Text("Your widget is saved. Reconnect a project that provides this sensor.", style = MaterialTheme.typography.bodyMedium)
         }
     } else when (state.widget.type) {
-        WidgetType.VALUE -> SensorCard(state.capability, state.value, controls, state.widget.settings.precision, freshnessLabel(state))
+        WidgetType.VALUE -> WidgetContainer(title, status = freshnessLabel(state), controls = controls,
+            statusIsAlert = displayedFreshness(state) != ReadingFreshness.LIVE) { WidgetReading(state, controls) }
         WidgetType.CHART -> ChartWidget(state, controls)
         WidgetType.GAUGE, WidgetType.RANGE -> BoundedWidget(state, controls)
     }

@@ -136,6 +136,15 @@ internal fun DashboardContent(
                     modifier = Modifier.testTag("dashboard-grid").onGloballyPositioned { gridOrigin = it.positionInRoot() },
                     userScrollEnabled = draggingId == null, contentPadding = PaddingValues(16.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    if (dashboard.isEditing) item(key = "edit-guidance", span = { GridItemSpan(maxLineSpan) }) {
+                        Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = MaterialTheme.shapes.large) {
+                            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text("Make it yours", style = MaterialTheme.typography.titleMedium)
+                                Text("Hold a grip to reorder. Widget settings let you resize, change type, duplicate, or hide.",
+                                    style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                    }
                     if (isDemo) item(key = "demo-explanation", span = { GridItemSpan(maxLineSpan) }) {
                         Text("These readings are simulated. Exit Demo to connect your own ESP32.", style = MaterialTheme.typography.bodySmall)
                     }

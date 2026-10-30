@@ -33,14 +33,16 @@ internal fun ChartWidget(state: DashboardWidgetState, controls: WidgetControls? 
     val unit = sensorUnit(state.capability?.unit.orEmpty())
     val ink = currentWidgetAccent()
     val grid = MaterialTheme.colorScheme.outlineVariant
-    WidgetContainer((state.capability?.name ?: sensorName(state.widget.source.capabilityId)), status = freshnessLabel(state), controls = controls) {
-        val current = state.timeline?.takeIf { it.latestValid }?.latestNumeric?.takeIf { it.isFinite() }
-        if (current == null) Text("Current value unavailable", style = MaterialTheme.typography.titleMedium)
-        else SensorReading(number(current, settings.precision), unit, compact = controls != null)
+    WidgetContainer((state.capability?.name ?: sensorName(state.widget.source.capabilityId)), status = freshnessLabel(state), statusIsAlert = displayedFreshness(state) != ReadingFreshness.LIVE, controls = controls) {
+        WidgetReading(state, controls)
         if (state.capability?.type?.equals("number", true) != true) Text("A numeric sensor is required for a chart.")
         else if (series == null) Text("Waiting for numeric samples in this time window.")
         else {
-            if (controls == null) Text("${axes!!.second} $unit", style = MaterialTheme.typography.labelSmall)
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (displayedFreshness(state) != ReadingFreshness.LIVE)
+                    Text("Recorded history", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (controls == null) Text("${axes!!.second} $unit", style = MaterialTheme.typography.labelSmall)
+            }
             Spacer(Modifier.fillMaxWidth().height(if (controls == null) 140.dp else 56.dp).semantics {
                 contentDescription = chartSummary(state, series)
             }.drawWithCache {
@@ -85,43 +87,46 @@ internal fun ChartWidget(state: DashboardWidgetState, controls: WidgetControls? 
             if (controls == null) {
                 Text("${axes!!.first} $unit", style = MaterialTheme.typography.labelSmall)
                 FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("-${settings.chartWindowSeconds}s", style = MaterialTheme.typography.labelSmall)
+                    Text("${settings.chartWindowSeconds / 60} min ago", style = MaterialTheme.typography.labelSmall)
                     Text("Now", style = MaterialTheme.typography.labelSmall)
                 }
             }
         }
-        Text("Receive time - ${settings.chartWindowSeconds / 60} min window", style = MaterialTheme.typography.labelSmall)
+
     }
 }
 
 @Composable
 internal fun BoundedWidget(state: DashboardWidgetState, controls: WidgetControls? = null) {
     val settings = state.widget.settings
-    val value = state.timeline?.takeIf { it.latestValid }?.latestNumeric
+    val value = readingForDisplay(state)?.toDoubleOrNull()
     val range = rangeReading(value, settings)
     val unit = sensorUnit(state.capability?.unit.orEmpty())
     val ink = currentWidgetAccent()
     val track = MaterialTheme.colorScheme.surfaceContainerHigh
     val error = MaterialTheme.colorScheme.error
     val title = (state.capability?.name ?: sensorName(state.widget.source.capabilityId))
-    WidgetContainer(title, status = freshnessLabel(state), controls = controls) {
+    WidgetContainer(title, status = freshnessLabel(state), statusIsAlert = displayedFreshness(state) != ReadingFreshness.LIVE, controls = controls) {
+        WidgetReading(state, controls)
         when {
             state.capability?.type?.equals("number", true) != true -> Text("A numeric sensor is required for this visualization.")
             !settings.hasRange -> Text("Set minimum and maximum in widget settings.")
-            range == null -> Text("Waiting for a valid numeric reading.")
+            range == null -> Unit
             else -> {
-                SensorReading(number(value!!, settings.precision), unit, compact = controls != null)
+
                 val outside = range.status != BoundStatus.INSIDE
                 val description = when (range.status) {
                     BoundStatus.BELOW -> "Below configured minimum"
                     BoundStatus.ABOVE -> "Above configured maximum"
                     BoundStatus.INSIDE -> when {
-                        settings.lowerThreshold != null && value < settings.lowerThreshold -> "Below lower threshold"
-                        settings.upperThreshold != null && value > settings.upperThreshold -> "Above upper threshold"
+                        settings.lowerThreshold != null && value!! < settings.lowerThreshold -> "Below lower threshold"
+                        settings.upperThreshold != null && value!! > settings.upperThreshold -> "Above upper threshold"
                         else -> "Within configured bounds"
                     }
                 }
-                Canvas(Modifier.fillMaxWidth().height(if (state.widget.type == WidgetType.GAUGE) { if (controls == null) 96.dp else 48.dp } else 32.dp)
+                BoxWithConstraints(Modifier.fillMaxWidth()) {
+                val gaugeHeight = minOf(if (controls == null) 96.dp else 48.dp, maxWidth / 2 + 8.dp)
+                Canvas(Modifier.fillMaxWidth().height(if (state.widget.type == WidgetType.GAUGE) gaugeHeight else 32.dp)
                     .semantics { contentDescription = description }) {
                     val color = if (outside) error else ink
                     if (state.widget.type == WidgetType.GAUGE) {
@@ -142,11 +147,13 @@ internal fun BoundedWidget(state: DashboardWidgetState, controls: WidgetControls
                         drawCircle(color, 6.dp.toPx(), Offset(left + (right - left) * range.fraction, y))
                     }
                 }
+                }
                 FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text(number(settings.minimum!!, settings.precision), style = MaterialTheme.typography.labelSmall)
                     Text(number(settings.maximum!!, settings.precision), style = MaterialTheme.typography.labelSmall)
                 }
-                Text(description, style = MaterialTheme.typography.bodySmall, color = if (outside) error else MaterialTheme.colorScheme.onSurfaceVariant)
+                if (description != "Within configured bounds") Text(description, style = MaterialTheme.typography.bodySmall,
+                    color = if (outside) error else MaterialTheme.colorScheme.onSurfaceVariant)
                 if (controls == null && (settings.lowerThreshold != null || settings.upperThreshold != null))
                     Text("Thresholds: ${settings.lowerThreshold?.let { number(it, settings.precision) } ?: "--"} / ${settings.upperThreshold?.let { number(it, settings.precision) } ?: "--"} $unit",
                         style = MaterialTheme.typography.labelSmall)

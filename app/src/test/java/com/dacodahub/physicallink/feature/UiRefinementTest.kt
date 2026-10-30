@@ -88,7 +88,7 @@ class UiRefinementTest {
         }
         compose.onNodeWithContentDescription("23.58 \u00b0C").assertExists()
         compose.onNodeWithContentDescription("Temperature. Line chart", substring = true).assertWidthIsAtLeast(280.dp)
-        listOf("-60s", "Now").forEach { label ->
+        listOf("1 min ago", "Now").forEach { label ->
             val layouts = mutableListOf<TextLayoutResult>()
             compose.onNodeWithText(label).performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
             val result = layouts.single()
@@ -126,6 +126,7 @@ class UiRefinementTest {
                 onTryDemo = { demos++ }, onScan = { fail("Demo must not scan") })
         } }
         compose.onNodeWithText("Explore without hardware").assertDoesNotExist()
+        compose.onNodeWithTag("device-overview").performScrollToNode(hasText("Try Demo"))
         compose.onNodeWithText("Try Demo").assertHeightIsAtLeast(48.dp).performClick()
         assertEquals(1, demos)
         assertTrue(gettingStartedSections.none { it.second.contains("PhysicalLink Soil") })

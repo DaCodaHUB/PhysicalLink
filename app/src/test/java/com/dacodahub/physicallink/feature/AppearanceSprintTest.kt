@@ -44,7 +44,7 @@ class AppearanceSprintTest {
         compose.onNodeWithText("Explore without hardware").assertDoesNotExist()
         compose.onNodeWithText("Open dashboard").performClick()
         assertTrue(opened)
-        compose.onNodeWithText("Appearance").performClick()
+        compose.onNodeWithContentDescription("Appearance").performClick()
         Appearance.entries.forEach { compose.onNodeWithText(it.label).assertExists() }
     }
 }
