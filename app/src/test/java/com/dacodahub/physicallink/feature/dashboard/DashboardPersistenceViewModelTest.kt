@@ -220,7 +220,7 @@ class DashboardPersistenceViewModelTest {
         val changed = m.copy(epoch = "0000000000000002", sensors = listOf(m.sensors.first(), ManifestSensor("c", "Gamma", "u")))
         devices.switchTo(changed.dashboardDeviceId(), changed.dashboardCapabilities())
         val restored = vm(devices, storage, "reconnected")
-        val state = restored.awaitState { !it.loadingLayout && it.widgets.size + it.hiddenWidgets.size == 4 }
+        val state = restored.awaitState { !it.loadingLayout && it.widgets.size == 3 && it.hiddenWidgets.isEmpty() }
         assertTrue((state.widgets + state.hiddenWidgets).all { it.value == null })
         val persisted = withTimeout(5000) { storage.observe(id).first { it?.widgets?.size == 4 } }!!
         assertEquals(saved.widgets, persisted.widgets.take(3))

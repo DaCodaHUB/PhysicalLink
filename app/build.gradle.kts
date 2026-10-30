@@ -35,6 +35,7 @@ android {
         targetCompatibility = JavaVersion.VERSION_11
     }
     testOptions { unitTests.isIncludeAndroidResources = true }
+    sourceSets.getByName("test").resources.srcDir(rootProject.file("test-fixtures"))
 
     buildFeatures {
         compose = true

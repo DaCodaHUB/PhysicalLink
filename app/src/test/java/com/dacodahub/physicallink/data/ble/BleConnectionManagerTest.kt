@@ -172,7 +172,7 @@ class BleConnectionManagerTest {
         return meta to control
     }
     private fun fixtureBytes(key: String): ByteArray {
-        val fixture = org.json.JSONObject(java.io.File("../firmware/soil-monitor/test/protocol_v2/fixtures/numeric-v2.json").readText())
+        val fixture = org.json.JSONObject(requireNotNull(javaClass.getResource("/protocol-v2/numeric-v2.json")).readText())
         return fixture.getJSONObject("wire").getString(key).chunked(2).map { it.toInt(16).toByte() }.toByteArray()
     }
     @Test fun `only complete metadata is published`() {

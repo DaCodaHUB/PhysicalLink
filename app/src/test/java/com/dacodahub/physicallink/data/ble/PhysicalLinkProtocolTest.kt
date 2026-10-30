@@ -3,10 +3,9 @@ package com.dacodahub.physicallink.data.ble
 import org.junit.Test
 import org.junit.Assert.*
 import org.json.JSONObject
-import java.io.File
 
 class PhysicalLinkProtocolTest {
-    private val fixture = JSONObject(File("../firmware/soil-monitor/test/protocol_v2/fixtures/numeric-v2.json").readText())
+    private val fixture = JSONObject(requireNotNull(javaClass.getResource("/protocol-v2/numeric-v2.json")).readText())
     private fun page(name: String): ByteArray {
         val hex = fixture.getJSONObject("wire").getString(name)
         return hex.chunked(2).map { it.toInt(16).toByte() }.toByteArray()

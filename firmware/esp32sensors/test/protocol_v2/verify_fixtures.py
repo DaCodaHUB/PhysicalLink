@@ -15,7 +15,7 @@ def unique(pairs):
     return result
 
 
-fixture = json.loads((pathlib.Path(__file__).parent / "fixtures/numeric-v2.json").read_text(),
+fixture = json.loads((pathlib.Path(__file__).resolve().parents[4] / "test-fixtures/protocol-v2/numeric-v2.json").read_text(),
                     object_pairs_hook=unique)
 executable = sys.argv[1]
 lines = subprocess.check_output([executable, "emit"], text=True).splitlines()

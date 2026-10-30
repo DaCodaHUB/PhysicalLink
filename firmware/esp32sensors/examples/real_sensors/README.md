@@ -32,7 +32,7 @@ budget, state synchronization, and coalescing behavior are unchanged.
 
 ## Build and connect
 
-From `firmware/soil-monitor`:
+From `firmware/esp32sensors`:
 
 ```sh
 pio run

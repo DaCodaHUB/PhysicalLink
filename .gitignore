@@ -16,4 +16,5 @@
 .cxx
 local.properties
 /.kotlin/
-firmware/soil-monitor/docs/
+firmware/esp32sensors/docs/
+firmware/ConsumerTest/

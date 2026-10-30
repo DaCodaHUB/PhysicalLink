@@ -3,12 +3,11 @@ package com.dacodahub.physicallink.data.ble
 import org.junit.Test
 import org.junit.Assert.*
 import org.json.JSONObject
-import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
 class LiveCodecTest {
-    private val fixtures = JSONObject(File("../firmware/soil-monitor/test/protocol_v2/fixtures/numeric-v2.json").readText())
+    private val fixtures = JSONObject(requireNotNull(javaClass.getResource("/protocol-v2/numeric-v2.json")).readText())
     private fun wire(key: String) = fixtures.getJSONObject("wire").getString(key).chunked(2).map { it.toInt(16).toByte() }.toByteArray()
     private fun metadata(key: String = "one") = MetadataParser.parse(wire("manifest.$key"))
     private fun rejects(block: () -> Unit) { try { block(); fail("Expected rejection") } catch (_: IllegalArgumentException) {} }

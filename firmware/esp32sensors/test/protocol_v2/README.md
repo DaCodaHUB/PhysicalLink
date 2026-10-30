@@ -4,11 +4,11 @@ The folder/fixture names retain `v2` to identify the frozen wire version. Source
 components now have production names (`ProtocolCodec`, `SensorState`, `Metadata`)
 under `physical_link::protocol`; there is no alternate production transport.
 
-`fixtures/numeric-v2.json` is unchanged. Both native tests and Android's
+The shared repository-root `test-fixtures/protocol-v2/numeric-v2.json` is unchanged. Both native tests and Android's
 `PhysicalLinkProtocolTest` / `LiveCodecTest` use its golden vectors. The JSON
 oracle and page oracle compare encoded production output, not copied constants.
 
-Run the complete native suite from `firmware/soil-monitor`:
+Run the complete native suite from `firmware/esp32sensors`:
 
 ```sh
 cmake -S test/sensor_registry -B .pio/registry-tests

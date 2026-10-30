@@ -30,9 +30,49 @@ class DeviceDashboardIntegrationTest {
         assertEquals(original.widgets, reconciled.widgets.take(original.widgets.size))
         assertEquals("new", reconciled.widgets.last().source.capabilityId)
         val state = dashboardState(id, changed.dashboardCapabilities(), emptyMap(), reconciled)
-        assertNull(state.widgets.first { it.widget.source.capabilityId == "sensor-2" }.capability)
+        assertFalse(state.widgets.any { it.widget.source.capabilityId == "sensor-2" })
         assertEquals(2, state.widgets.count { it.widget.source.capabilityId == "sensor-1" })
         assertEquals(id, manifest(epoch = "0000000000000002").dashboardDeviceId())
+    }
+    @Test fun `removed sources stay persisted and return with all instances and settings`() {
+        val m = manifest(2)
+        val id = m.dashboardDeviceId()
+        val settings = WidgetSettings(precision = 3, minimum = -10.0, maximum = 100.0,
+            chartWindowSeconds = 300)
+        val original = DashboardLayout(listOf(
+            DashboardWidget("chart", WidgetType.CHART, SensorSource(id, "sensor-2"), 2, settings = settings),
+            DashboardWidget("value", WidgetType.VALUE, SensorSource(id, "sensor-1")),
+            DashboardWidget("hidden-copy", WidgetType.CHART, SensorSource(id, "sensor-2"), 1,
+                hidden = true, settings = settings.copy(precision = 1))))
+        val reduced = m.copy(sensors = listOf(m.sensors.first(), ManifestSensor("new", "New", "u")))
+        val reconciled = original.withDiscoveredSensors(id, reduced.dashboardCapabilities())
+        val state = dashboardState(id, reduced.dashboardCapabilities(), emptyMap(), reconciled)
+        assertEquals(listOf("value", reconciled.widgets.last().id), state.widgets.map { it.widget.id })
+        assertTrue(state.hiddenWidgets.isEmpty())
+        assertEquals(original.widgets, reconciled.widgets.take(3))
+        val encoded = com.dacodahub.physicallink.data.repository.DashboardLayoutCodec.encode(id, reconciled)
+        val decoded = com.dacodahub.physicallink.data.repository.DashboardLayoutCodec.decode(id, encoded)
+        assertEquals(reconciled, decoded)
+        val returning = m.copy(sensors = m.sensors + reduced.sensors.last())
+        assertEquals(decoded, decoded.withDiscoveredSensors(id, returning.dashboardCapabilities()))
+        val restored = dashboardState(id, returning.dashboardCapabilities(), emptyMap(), decoded)
+        assertEquals(listOf(original.widgets[0], original.widgets[1], reconciled.widgets.last()), restored.widgets.map { it.widget })
+        assertEquals(listOf(original.widgets[2]), restored.hiddenWidgets.map { it.widget })
+        assertTrue(restored.widgets.all { it.freshness == ReadingFreshness.UNAVAILABLE })
+    }
+
+    @Test fun `missing metadata and disconnect do not reconcile saved definitions as removals`() {
+        val m = manifest(2)
+        val id = m.dashboardDeviceId()
+        val saved = defaultDashboard(id, m.dashboardCapabilities())
+        assertEquals(saved.widgets, dashboardState(id, null, emptyMap(), saved).widgets.map { it.widget })
+        assertEquals(saved.widgets, dashboardState(id, m.copy(sensors = emptyList()).dashboardCapabilities(),
+            emptyMap(), saved, connected = false).widgets.map { it.widget })
+        assertTrue(dashboardState(id, m.copy(sensors = emptyList()).dashboardCapabilities(), emptyMap(), saved).widgets.isEmpty())
+        val other = m.copy(deviceId = "11112233-4455-6677-8899-aabbccddeeff")
+        assertNotEquals(id, other.dashboardDeviceId())
+        assertTrue(dashboardState(other.dashboardDeviceId(), other.dashboardCapabilities(), emptyMap(), saved).widgets.isEmpty())
+        assertTrue(defaultDashboard(other.dashboardDeviceId(), other.dashboardCapabilities()).widgets.none { it in saved.widgets })
     }
     @Test fun `history uses acquisition age deduplicates images and isolates reconnects`() {
         var now = 100_000L

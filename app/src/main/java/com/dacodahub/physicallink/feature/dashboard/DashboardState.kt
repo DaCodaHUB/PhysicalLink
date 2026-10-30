@@ -24,7 +24,7 @@ data class DashboardState(
     val sensorNames: Map<String, String> = emptyMap()
 )
 
-/** Null configuration follows discovery; explicit configurations preserve missing sources. */
+/** Keep saved definitions intact; a validated v2 manifest limits the active sensor sources. */
 fun dashboardState(
     deviceId: String?,
     capabilities: DeviceCapabilities?,
@@ -36,7 +36,12 @@ fun dashboardState(
 ): DashboardState {
     val layout = configuration ?: defaultDashboard(deviceId, capabilities)
     val sensors = capabilities?.validDashboardCapabilities().orEmpty().associateBy { it.id }
-    val widgets = layout.widgets.filter { it.id.isNotBlank() }.distinctBy { it.id }.map { widget ->
+    // V2 capabilities are published only after complete manifest validation. Null metadata
+    // (loading, disconnect or failure) must never be interpreted as an empty manifest.
+    val widgets = layout.widgets.filter { widget ->
+        widget.id.isNotBlank() && (capabilities?.version != 2 || !connected ||
+            (widget.source.deviceId == deviceId && widget.source.capabilityId in sensors))
+    }.distinctBy { it.id }.map { widget ->
         val capability = sensors[widget.source.capabilityId]
             .takeIf { !deviceId.isNullOrBlank() && widget.source.deviceId == deviceId }
         val timeline = history?.takeIf { it.deviceId == deviceId }?.sensors?.get(widget.source)

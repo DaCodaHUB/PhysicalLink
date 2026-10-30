@@ -7,7 +7,7 @@ state synchronization, live notifications, and safe BLE shutdown.
 
 ## Use this project
 
-From `firmware/soil-monitor`, with PlatformIO installed:
+From `firmware/esp32sensors`, with PlatformIO installed:
 
 ```sh
 pio run
@@ -73,6 +73,11 @@ void loop() {
 Keep sensor IDs stable. The library preserves the existing factory-eFuse-derived
 board UUID and changes only the session epoch on restart. Android layout keys
 such as `v2:<UUID>` are deliberately unchanged; no storage migration is required.
+The basic and real-sensor examples therefore share identity when flashed onto
+the same board; they demonstrate alternate sensor registrations for that board,
+not separately provisioned projects. Different boards have different UUIDs.
+Android retains absent sensors' saved widgets and restores them if their IDs
+return, while displaying only sensors in the validated manifest.
 
 ## Validate changes
 
