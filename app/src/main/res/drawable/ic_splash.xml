@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Use the transparent launcher foreground, with a little extra room inside the
+     splash screen's circular mask. Never use the opaque Play Store artwork here. -->
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@mipmap/ic_launcher_foreground"
+    android:insetLeft="4%"
+    android:insetTop="4%"
+    android:insetRight="4%"
+    android:insetBottom="4%" />
