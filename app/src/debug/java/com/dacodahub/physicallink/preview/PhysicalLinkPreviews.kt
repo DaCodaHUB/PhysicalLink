@@ -8,7 +8,7 @@ import com.dacodahub.physicallink.domain.model.*
 import com.dacodahub.physicallink.feature.dashboard.*
 import com.dacodahub.physicallink.feature.devices.DevicesContent
 
-// Metadata matches firmware/esp32sensors/examples/real_sensors/main.cpp. All sensor readings stay null.
+// Metadata matches https://github.com/DaCodaHUB/PhysicalLink-firmware/blob/main/examples/real_sensors/main.cpp. All sensor readings stay null.
 private val capabilities = DeviceCapabilities(2, "PhysicalLink", listOf(
     DeviceCapability("soil", "v2:soil", "raw", "number"),
     DeviceCapability("temperature", "v2:temperature", "C", "number"),
