@@ -20,12 +20,13 @@ import com.dacodahub.physicallink.domain.model.*
 private fun number(value: Double, precision: Int) = formatSensorValue(value.toString(), "number", precision)
 
 @Composable
-internal fun ChartWidget(state: DashboardWidgetState, controls: WidgetControls? = null) {
+internal fun ChartWidget(state: DashboardWidgetState, controls: WidgetControls? = null,
+    showReading: Boolean = true, showStatus: Boolean = true, title: String? = null) {
     val settings = state.widget.settings
     val samples = state.timeline?.samples.orEmpty()
     val plotTime = chartRenderTime(state.nowMs, samples)
-    val series = remember(samples, plotTime, settings.chartWindowSeconds, settings.staleAfterSeconds) {
-        chartSeries(samples, plotTime, settings.chartWindowSeconds, settings.staleAfterSeconds * 1000L)
+    val series = remember(samples, plotTime, settings.chartWindowSeconds, settings.staleAfterSeconds, settings.chartMinimum, settings.chartMaximum) {
+        chartSeries(samples, plotTime, settings.chartWindowSeconds, settings.staleAfterSeconds * 1000L)?.let { withChartBounds(it, settings) }
     }
     val axes = remember(series?.minimum, series?.maximum, settings.precision) {
         series?.let { chartAxisLabels(it, settings.precision) }
@@ -33,8 +34,8 @@ internal fun ChartWidget(state: DashboardWidgetState, controls: WidgetControls? 
     val unit = sensorUnit(state.capability?.unit.orEmpty())
     val ink = currentWidgetAccent()
     val grid = MaterialTheme.colorScheme.outlineVariant
-    WidgetContainer((state.capability?.name ?: sensorName(state.widget.source.capabilityId)), status = freshnessLabel(state), statusIsAlert = displayedFreshness(state) != ReadingFreshness.LIVE, controls = controls) {
-        WidgetReading(state, controls)
+    WidgetContainer(title ?: (state.capability?.name ?: sensorName(state.widget.source.capabilityId)), status = if (showStatus) freshnessLabel(state) else null, statusIsAlert = displayedFreshness(state) != ReadingFreshness.LIVE, controls = controls) {
+        if (showReading) WidgetReading(state, controls)
         if (state.capability?.type?.equals("number", true) != true) Text("A numeric sensor is required for a chart.")
         else if (series == null) Text("Waiting for numeric samples in this time window.")
         else {
@@ -54,28 +55,40 @@ internal fun ChartWidget(state: DashboardWidgetState, controls: WidgetControls? 
                 val fillBrush = Brush.verticalGradient(listOf(ink.copy(alpha = 0.14f), ink.copy(alpha = 0f)),
                     startY = inset, endY = inset + plotHeight.coerceAtLeast(1f))
                 val dots = mutableListOf<Offset>()
-                series.segments.forEach { segment ->
-                    fun point(sample: NumericSample) = Offset(
-                        inset + chartTimeFraction(sample.timeMs, plotTime, settings.chartWindowSeconds) * plotWidth,
-                        inset + (1f - axisFraction(sample.value, series.minimum, series.maximum)) * plotHeight)
-                    if (segment.size == 1) dots += point(segment.first())
-                    else if (segment.isNotEmpty()) {
+                if (settings.chartMinimum == null && settings.chartMaximum == null) {
+                    // Preserve the existing cached polyline fast path for ordinary Auto charts.
+                    series.segments.filter { it.size > 1 }.forEach { segment ->
+                        fun point(sample: NumericSample) = Offset(
+                            inset + chartTimeFraction(sample.timeMs, plotTime, settings.chartWindowSeconds) * plotWidth,
+                            inset + (1f - axisFraction(sample.value, series.minimum, series.maximum)) * plotHeight)
+                        val start = point(segment.first()); val end = point(segment.last())
                         val line = Path().apply {
-                            val start = point(segment.first()); moveTo(start.x, start.y)
-                            for (index in 1 until segment.size) { val next = point(segment[index]); lineTo(next.x, next.y) }
+                            moveTo(start.x, start.y)
+                            segment.drop(1).forEach { val next = point(it); lineTo(next.x, next.y) }
                         }
                         paths += line
-                        // Close each segment separately to preserve gaps between missing updates.
-                        fills += Path().apply {
-                            addPath(line)
-                            lineTo(point(segment.last()).x, inset + plotHeight)
-                            lineTo(point(segment.first()).x, inset + plotHeight)
-                            close()
-                        }
+                        fills += Path().apply { addPath(line); lineTo(end.x, inset + plotHeight); lineTo(start.x, inset + plotHeight); close() }
+                    }
+                } else {
+                chartLines(series, plotTime, settings.chartWindowSeconds).forEach { line ->
+                    val start = Offset(inset + line.startX * plotWidth, inset + (1f - line.startY) * plotHeight)
+                    val end = Offset(inset + line.endX * plotWidth, inset + (1f - line.endY) * plotHeight)
+                    paths += Path().apply { moveTo(start.x, start.y); lineTo(end.x, end.y) }
+                    fills += Path().apply {
+                        moveTo(start.x, start.y); lineTo(end.x, end.y)
+                        lineTo(end.x, inset + plotHeight); lineTo(start.x, inset + plotHeight); close()
                     }
                 }
+                }
+                series.segments.filter { it.size == 1 }.forEach { segment ->
+                    val point = segment.single()
+                    if (point.value in series.minimum..series.maximum) dots += Offset(
+                        inset + chartTimeFraction(point.timeMs, plotTime, settings.chartWindowSeconds) * plotWidth,
+                        inset + (1f - axisFraction(point.value, series.minimum, series.maximum)) * plotHeight)
+                }
+                val fillPath = Path().apply { fills.forEach { addPath(it) } }
                 onDrawBehind {
-                    fills.forEach { drawPath(it, fillBrush) }
+                    drawPath(fillPath, fillBrush)
                     repeat(3) { index ->
                         val y = inset + plotHeight * index / 2f
                         drawLine(grid, Offset(inset, y), Offset(size.width - inset, y), 1.dp.toPx())
@@ -91,13 +104,18 @@ internal fun ChartWidget(state: DashboardWidgetState, controls: WidgetControls? 
                     Text("Now", style = MaterialTheme.typography.labelSmall)
                 }
             }
+            if (samples.any { it.value.isFinite() && it.timeMs in (plotTime - settings.chartWindowSeconds * 1000L)..plotTime &&
+                    (it.value < series.minimum || it.value > series.maximum) })
+                Text("Readings outside the visible Y-axis bounds are clipped. Recorded data is unchanged.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
 
     }
 }
 
 @Composable
-internal fun BoundedWidget(state: DashboardWidgetState, controls: WidgetControls? = null) {
+internal fun BoundedWidget(state: DashboardWidgetState, controls: WidgetControls? = null,
+    showReading: Boolean = true, showStatus: Boolean = true, titleOverride: String? = null, large: Boolean = false) {
     val settings = state.widget.settings
     val value = readingForDisplay(state)?.toDoubleOrNull()
     val range = rangeReading(value, settings)
@@ -106,12 +124,12 @@ internal fun BoundedWidget(state: DashboardWidgetState, controls: WidgetControls
     val track = MaterialTheme.colorScheme.surfaceContainerHigh
     val error = MaterialTheme.colorScheme.error
     val title = (state.capability?.name ?: sensorName(state.widget.source.capabilityId))
-    WidgetContainer(title, status = freshnessLabel(state), statusIsAlert = displayedFreshness(state) != ReadingFreshness.LIVE, controls = controls) {
-        WidgetReading(state, controls)
+    WidgetContainer(titleOverride ?: title, status = if (showStatus) freshnessLabel(state) else null, statusIsAlert = displayedFreshness(state) != ReadingFreshness.LIVE, controls = controls) {
+        if (showReading) WidgetReading(state, controls)
         when {
             state.capability?.type?.equals("number", true) != true -> Text("A numeric sensor is required for this visualization.")
             !settings.hasRange -> Text("Set minimum and maximum in widget settings.")
-            range == null -> Unit
+            range == null -> if (large) Text("No current position. Configured bounds: ${number(settings.minimum!!, settings.precision)} to ${number(settings.maximum!!, settings.precision)} $unit", style = MaterialTheme.typography.bodySmall)
             else -> {
 
                 val outside = range.status != BoundStatus.INSIDE
@@ -124,10 +142,12 @@ internal fun BoundedWidget(state: DashboardWidgetState, controls: WidgetControls
                         else -> "Within configured bounds"
                     }
                 }
+                if (large && state.freshness == ReadingFreshness.STALE) Text("Last-known position", style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
                 BoxWithConstraints(Modifier.fillMaxWidth()) {
-                val gaugeHeight = minOf(if (controls == null) 96.dp else 48.dp, maxWidth / 2 + 8.dp)
-                Canvas(Modifier.fillMaxWidth().height(if (state.widget.type == WidgetType.GAUGE) gaugeHeight else 32.dp)
-                    .semantics { contentDescription = description }) {
+                val gaugeHeight = minOf(if (large) 180.dp else if (controls == null) 96.dp else 48.dp, maxWidth / 2 + 8.dp)
+                Canvas(Modifier.fillMaxWidth().height(if (state.widget.type == WidgetType.GAUGE) gaugeHeight else if (large) 48.dp else 32.dp)
+                    .semantics { contentDescription = if (large && state.freshness == ReadingFreshness.STALE) "Last-known position. $description" else description }) {
                     val color = if (outside) error else ink
                     if (state.widget.type == WidgetType.GAUGE) {
                         val width = minOf(size.width - 12.dp.toPx(), (size.height - 8.dp.toPx()) * 2).coerceAtLeast(1f)
@@ -152,7 +172,7 @@ internal fun BoundedWidget(state: DashboardWidgetState, controls: WidgetControls
                     Text(number(settings.minimum!!, settings.precision), style = MaterialTheme.typography.labelSmall)
                     Text(number(settings.maximum!!, settings.precision), style = MaterialTheme.typography.labelSmall)
                 }
-                if (description != "Within configured bounds") Text(description, style = MaterialTheme.typography.bodySmall,
+                if (large || description != "Within configured bounds") Text(description, style = MaterialTheme.typography.bodySmall,
                     color = if (outside) error else MaterialTheme.colorScheme.onSurfaceVariant)
                 if (controls == null && (settings.lowerThreshold != null || settings.upperThreshold != null))
                     Text("Thresholds: ${settings.lowerThreshold?.let { number(it, settings.precision) } ?: "--"} / ${settings.upperThreshold?.let { number(it, settings.precision) } ?: "--"} $unit",

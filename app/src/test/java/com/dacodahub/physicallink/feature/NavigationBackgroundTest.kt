@@ -41,7 +41,7 @@ class NavigationBackgroundTest {
                 Box(Modifier.fillMaxSize().background(Color.Gray).testTag("navigation-frame")) {
                     PhysicalLinkNavContent(nav,
                         devices = { _, _ -> Scaffold { Text("Devices", Modifier.padding(it)) } },
-                        dashboard = { Scaffold { Text("Dashboard", Modifier.padding(it)) } })
+                        dashboard = { _, _ -> Scaffold { Text("Dashboard", Modifier.padding(it)) } }, sensorDetails = { _, _, _ -> Text("Details") })
                 }
             }
         }

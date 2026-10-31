@@ -1,7 +1,10 @@
 package com.dacodahub.physicallink.feature.dashboard
 
+import com.dacodahub.physicallink.feature.sensordetails.SensorDetailsTarget
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.*
@@ -36,14 +39,15 @@ internal data class DashboardActions(
     val duplicate: (String) -> Unit = {},
     val add: (SensorSource) -> Unit = {}, val reset: () -> Unit = {},
     val configure: (String, WidgetType, WidgetSettings) -> Unit = { _, _, _ -> },
-    val resize: (String, Int) -> Unit = { _, _ -> }, val useValue: (String) -> Unit = {}
+    val resize: (String, Int) -> Unit = { _, _ -> }, val useValue: (String) -> Unit = {},
+    val sensorDetails: (SensorDetailsTarget) -> Unit = {}
 )
 
 @Composable
-fun DashboardScreen(onDevices: () -> Unit, viewModel: DashboardViewModel = hiltViewModel()) {
+fun DashboardScreen(onDevices: () -> Unit, onOpenSensor: (SensorDetailsTarget) -> Unit = {}, viewModel: DashboardViewModel = hiltViewModel()) {
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     LaunchedEffect(viewModel, lifecycle) {
-        if (viewModel.isDemo) lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) { viewModel.simulateDemoWhileVisible() }
+        if (viewModel.isDemo) lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { viewModel.simulateDemoWhileVisible() }
     }
     val connection by viewModel.connectionState.collectAsStateWithLifecycle()
     val dashboard by viewModel.dashboard.collectAsStateWithLifecycle()
@@ -51,10 +55,14 @@ fun DashboardScreen(onDevices: () -> Unit, viewModel: DashboardViewModel = hiltV
     val capabilities by viewModel.capabilities.collectAsStateWithLifecycle()
     val devices by viewModel.devices.collectAsStateWithLifecycle()
     LaunchedEffect(connection) {
+        if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) &&
+            (connection == ConnectionState.Disconnected || connection == ConnectionState.ConnectionLost || connection is ConnectionState.Error)) onDevices()
+    }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         if (connection == ConnectionState.Disconnected || connection == ConnectionState.ConnectionLost || connection is ConnectionState.Error) onDevices()
     }
     DashboardContent(connection, dashboard, deviceId, capabilities, devices.find { it.address == deviceId }?.rssi,
-        DashboardActions(devices = onDevices, disconnect = viewModel::disconnect, editing = viewModel::setEditing,
+        DashboardActions(devices = onDevices, sensorDetails = onOpenSensor, disconnect = viewModel::disconnect, editing = viewModel::setEditing,
             move = viewModel::moveWidget, moveBy = viewModel::moveWidgetBy, hide = viewModel::hideWidget,
             duplicate = viewModel::duplicateWidget, restore = viewModel::restoreWidget, add = viewModel::addWidget, reset = viewModel::resetLayout,
             configure = viewModel::configureWidget, resize = viewModel::resizeWidget, useValue = viewModel::useValueWidget), isDemo = viewModel.isDemo)
@@ -194,7 +202,10 @@ internal fun DashboardContent(
                                         }?.key as? String
                                     })
                                 }
-                            Box(Modifier.fillMaxWidth().zIndex(if (dragging) 1f else 0f).graphicsLayer {
+                            Box(Modifier.fillMaxWidth().testTag("sensor-widget:$id")
+                                .then(if (!dashboard.isEditing) Modifier.clickable(role = Role.Button,
+                                    onClickLabel = "View details for $title", onClick = { actions.sensorDetails(SensorDetailsTarget(state.widget.source, state.widget.id)) }) else Modifier)
+                                .zIndex(if (dragging) 1f else 0f).graphicsLayer {
                                 translationX = if (dragging) movement.x else 0f
                                 translationY = if (dragging) movement.y else 0f
                                 alpha = if (dragging) 0.85f else 1f

@@ -17,6 +17,7 @@ object DashboardLayoutCodec {
                     .put("settings", JSONObject().put("chartWindowSeconds", settings.chartWindowSeconds)
                         .put("minimum", settings.minimum ?: JSONObject.NULL).put("maximum", settings.maximum ?: JSONObject.NULL)
                         .put("lowerThreshold", settings.lowerThreshold ?: JSONObject.NULL).put("upperThreshold", settings.upperThreshold ?: JSONObject.NULL)
+                        .put("chartMinimum", settings.chartMinimum ?: JSONObject.NULL).put("chartMaximum", settings.chartMaximum ?: JSONObject.NULL)
                         .put("precision", settings.precision).put("staleAfterSeconds", settings.staleAfterSeconds)))
             }
         }).toString()
@@ -35,7 +36,8 @@ object DashboardLayoutCodec {
                 val saved = widget.getJSONObject("settings")
                 WidgetSettings(saved.integer("chartWindowSeconds", 60), saved.numberOrNull("minimum"), saved.numberOrNull("maximum"),
                     saved.numberOrNull("lowerThreshold"), saved.numberOrNull("upperThreshold"),
-                    saved.integer("precision", 2), saved.integer("staleAfterSeconds", 15))
+                    saved.integer("precision", 2), saved.integer("staleAfterSeconds", 15),
+                    saved.numberOrNull("chartMinimum"), saved.numberOrNull("chartMaximum"))
             }
             DashboardWidget(widget.getString("id"), WidgetType.valueOf(widget.getString("type")),
                 SensorSource(widget.getString("deviceId"), widget.getString("capabilityId")),

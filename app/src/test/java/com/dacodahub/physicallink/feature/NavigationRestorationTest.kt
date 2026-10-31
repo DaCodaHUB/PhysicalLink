@@ -24,7 +24,7 @@ class NavigationRestorationTest {
         val restoration = StateRestorationTester(compose)
         restoration.setContent { PhysicalLinkTheme(dynamicColor = false) {
             nav = rememberNavController()
-            PhysicalLinkNavContent(nav, devices = { _, _ -> Text("Devices destination") }, dashboard = { Text("Dashboard destination") })
+            PhysicalLinkNavContent(nav, devices = { _, _ -> Text("Devices destination") }, dashboard = { _, _ -> Text("Dashboard destination") }, sensorDetails = { _, _, _ -> Text("Details") })
         } }
         compose.runOnIdle { nav.navigate("dashboard?demo=true") }
         compose.onNodeWithText("Dashboard destination").assertExists()

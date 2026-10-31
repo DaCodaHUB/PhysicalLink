@@ -1,5 +1,7 @@
 package com.dacodahub.physicallink.feature.dashboard
 
+import com.dacodahub.physicallink.feature.sensordetails.SensorDetailsInput
+import com.dacodahub.physicallink.feature.sensordetails.SensorDetailsSessionGate
 import androidx.lifecycle.SavedStateHandle
 import com.dacodahub.physicallink.data.repository.DemoDeviceRepository
 import androidx.lifecycle.ViewModel
@@ -24,7 +26,21 @@ class DashboardViewModel @Inject constructor(
     val isDemo: Boolean = savedStateHandle["demo"] ?: false
     private val demo = if (isDemo) DemoDeviceRepository(MonotonicClock { realRepository.monotonicNowMs() }) else null
     private val repository: DeviceRepository = demo ?: realRepository
-    suspend fun simulateDemoWhileVisible() { demo?.simulateWhileVisible() }
+    private var previousDemoJob: Job? = null
+    private var demoObservers = 0
+    private var demoJob: Job? = null
+    suspend fun simulateDemoWhileVisible() {
+        if (demo == null) return
+        demoObservers++
+        if (demoJob == null) {
+            val previous = previousDemoJob
+            demoJob = viewModelScope.launch { previous?.join(); demo.simulateWhileVisible() }
+        }
+        try { awaitCancellation() } finally {
+            demoObservers--
+            if (demoObservers == 0) { previousDemoJob = demoJob; demoJob?.cancel(); demoJob = null }
+        }
+    }
 
     val deviceId = repository.connectedDeviceId
     val devices = repository.devices
@@ -55,6 +71,10 @@ class DashboardViewModel @Inject constructor(
             }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, LoadedLayout(null))
 
+    internal val detailsLayout = combine(loaded, repository.dashboardDeviceId, capabilities) { saved, id, metadata ->
+        if (!saved.ready || saved.deviceId != id) null else saved.layout ?: defaultDashboard(id, metadata)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
     private val persistenceStatus = combine(loaded, saveError) { layout, error -> layout to error }
     private val presentationInputs = combine(sensorValues, repository.sensorHistory, connectionState) { values, history, connection ->
         Triple(values, history, connection)
@@ -62,6 +82,15 @@ class DashboardViewModel @Inject constructor(
     private val ticks = flow { while (currentCoroutineContext().isActive) { emit(repository.monotonicNowMs()); delay(1000) } }
     // Read the clock on every input too: a packet can arrive between one-second ticks.
     private val presentation = combine(presentationInputs, ticks) { inputs, _ -> inputs to repository.monotonicNowMs() }
+    private val detailsSessionGate = SensorDetailsSessionGate()
+    internal val sensorDetails = combine(presentation, capabilities, repository.dashboardDeviceId, repository.liveState, repository.manifest) {
+            _, _, _, _, _ ->
+        // GATT/session mutations run synchronously on main. Read one current snapshot rather than
+        // mixing delayed combine emissions across a metadata/epoch change.
+        detailsSessionGate.accept(SensorDetailsInput(repository.dashboardDeviceId.value, repository.capabilities.value, repository.sensorHistory.value,
+            repository.connectionState.value, repository.sensorValues.value, repository.liveState.value,
+            repository.manifest.value, repository.monotonicNowMs(), isDemo))
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SensorDetailsInput(simulated = isDemo))
     val dashboard = combine(repository.dashboardDeviceId, capabilities, presentation, persistenceStatus, editing) {
             deviceId, metadata, presentationState, status, isEditing ->
         val (inputs, now) = presentationState
@@ -124,9 +153,18 @@ class DashboardViewModel @Inject constructor(
     fun toggleWidth(id: String) = edit { it.toggleWidgetWidth(id) }
     fun resizeWidget(id: String, columns: Int) = edit { it.resizeWidget(id, columns) }
     fun configureWidget(id: String, type: WidgetType, settings: WidgetSettings) {
-        if (settings.validationError() != null) return
+        if (settings.validationError() != null || ((type == WidgetType.GAUGE || type == WidgetType.RANGE) && !settings.hasRange)) return
         edit { it.configureWidget(id, type, settings) }
     }
+    internal fun configureDetailsWidget(source: SensorSource, widgetId: String, settings: WidgetSettings) {
+        if (source.deviceId != repository.dashboardDeviceId.value || settings.validationError() != null) return
+        edit { layout ->
+            val current = layout.widgets.firstOrNull { it.id == widgetId && it.source == source } ?: return@edit layout
+            if ((current.type == WidgetType.GAUGE || current.type == WidgetType.RANGE) && !settings.hasRange) return@edit layout
+            layout.configureWidget(current.id, current.type, settings)
+        }
+    }
+
     fun useValueWidget(id: String) = edit { it.setWidgetType(id, WidgetType.VALUE) }
     fun hideWidget(id: String) = edit { it.setWidgetHidden(id, true) }
     fun restoreWidget(id: String) = edit { it.setWidgetHidden(id, false) }

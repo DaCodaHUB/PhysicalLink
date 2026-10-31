@@ -24,14 +24,8 @@ internal fun WidgetConfigurationSheet(
 ) {
     val widget = state.widget
     var type by remember(widget.id, widget.type) { mutableStateOf(widget.type) }
-    var minimum by remember(widget.id, widget.settings) { mutableStateOf(widget.settings.minimum?.toString().orEmpty()) }
-    var maximum by remember(widget.id, widget.settings) { mutableStateOf(widget.settings.maximum?.toString().orEmpty()) }
-    var low by remember(widget.id, widget.settings) { mutableStateOf(widget.settings.lowerThreshold?.toString().orEmpty()) }
-    var high by remember(widget.id, widget.settings) { mutableStateOf(widget.settings.upperThreshold?.toString().orEmpty()) }
-    var precision by remember(widget.id, widget.settings) { mutableStateOf(widget.settings.precision.toString()) }
-    var freshness by remember(widget.id, widget.settings) { mutableStateOf(widget.settings.staleAfterSeconds.toString()) }
-    var window by remember(widget.id, widget.settings) { mutableIntStateOf(widget.settings.chartWindowSeconds) }
-    var error by remember(widget.id) { mutableStateOf<String?>(null) }
+    var draft by remember(widget.source, widget.id, widget.settings) { mutableStateOf(NumericSettingsDraft.from(widget.settings)) }
+    val validation = remember(type, widget.settings, draft) { validateNumericSettings(type, widget.settings, draft) }
     var widthSelected by remember(widget.id) { mutableStateOf(false) }
     val defaultChartWidth = type == WidgetType.CHART && widget.type != WidgetType.CHART && !widthSelected
     val displayedWidth = if (defaultChartWidth) 2 else widget.columnSpan
@@ -56,42 +50,17 @@ internal fun WidgetConfigurationSheet(
             Text("Visualization", style = MaterialTheme.typography.titleSmall)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 supportedWidgetTypes.filter { numeric || it == WidgetType.VALUE }.forEach { choice ->
-                    FilterChip(selected = type == choice, onClick = { type = choice; error = null },
+                    FilterChip(selected = type == choice, onClick = { type = choice },
                         label = { Text(choice.name.lowercase().replaceFirstChar { it.titlecase() }) }, modifier = Modifier.heightIn(min = 48.dp))
                 }
             }
-            if (type == WidgetType.CHART) {
-                Text("Chart time window")
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf(60, 300, 900).forEach { seconds -> FilterChip(selected = window == seconds,
-                        onClick = { window = seconds }, label = { Text("${seconds / 60} min") }) }
-                }
-            }
-            if (type == WidgetType.GAUGE || type == WidgetType.RANGE) {
-                OutlinedTextField(minimum, { minimum = it }, label = { Text("Minimum") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-                OutlinedTextField(maximum, { maximum = it }, label = { Text("Maximum") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-                OutlinedTextField(low, { low = it }, label = { Text("Lower threshold (optional)") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-                OutlinedTextField(high, { high = it }, label = { Text("Upper threshold (optional)") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-            }
-            if (numeric) OutlinedTextField(precision, { precision = it }, label = { Text("Decimal places (0-6)") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-            OutlinedTextField(freshness, { freshness = it }, label = { Text("Stale after (seconds)") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-            error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }) }
+            NumericSettingsFields(type, numeric, draft, validation) { draft = it }
             Button(onClick = {
-                val bounded = type == WidgetType.GAUGE || type == WidgetType.RANGE
-                val fields = if (bounded) listOf(minimum, maximum, low, high) else listOf(
-                    widget.settings.minimum, widget.settings.maximum, widget.settings.lowerThreshold, widget.settings.upperThreshold
-                ).map { it?.toString().orEmpty() }
-                val parsed = fields.map { it.trim().takeIf(String::isNotEmpty)?.toDoubleOrNull() }
-                val settings = WidgetSettings(window, parsed[0], parsed[1], parsed[2], parsed[3], precision.toIntOrNull() ?: -1, freshness.toIntOrNull() ?: -1)
-                error = if (fields.zip(parsed).any { (text, number) -> text.isNotBlank() && number == null }) "Enter valid numeric bounds and thresholds."
-                    else settings.validationError() ?: if ((type == WidgetType.GAUGE || type == WidgetType.RANGE) && !settings.hasRange) "Set both minimum and maximum." else null
-                if (error == null) {
-                    actions.configure(widget.id, type, settings)
-                    // Existing charts and explicitly chosen widths are never resized on Apply.
-                    if (defaultChartWidth && widget.columnSpan != 2) actions.resize(widget.id, 2)
-                    onDismiss()
-                }
-            }, modifier = Modifier.fillMaxWidth()) { Text("Apply settings") }
+                val settings = validation.settings ?: return@Button
+                actions.configure(widget.id, type, settings)
+                if (defaultChartWidth && widget.columnSpan != 2) actions.resize(widget.id, 2)
+                onDismiss()
+            }, enabled = validation.settings != null, modifier = Modifier.fillMaxWidth()) { Text("Apply settings") }
             HorizontalDivider()
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = { actions.moveBy(widget.id, -1) }, enabled = index > 0) { Text("Move up") }

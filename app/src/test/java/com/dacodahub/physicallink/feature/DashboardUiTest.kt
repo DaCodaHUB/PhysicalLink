@@ -238,8 +238,8 @@ class DashboardUiTest {
         } }
         configure()
         compose.onNodeWithText("Gauge").performScrollTo().performClick()
-        compose.onNodeWithText("Apply settings").performScrollTo().performClick()
-        compose.onNodeWithText("Set both minimum and maximum.").assertExists()
+        compose.onNodeWithText("Apply settings").performScrollTo().assertIsNotEnabled()
+        compose.onAllNodesWithText("Enter a number.").assertCountEquals(2)
         assertNull(configured)
         compose.onNodeWithText("Minimum").performScrollTo().performTextInput("-10")
         compose.onNodeWithText("Maximum").performScrollTo().performTextInput("40")

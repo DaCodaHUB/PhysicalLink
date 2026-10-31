@@ -21,7 +21,7 @@ fun chartSeries(samples: List<NumericSample>, nowMs: Long, windowSeconds: Int, g
     var low = visible.minOf { it.value }
     var high = visible.maxOf { it.value }
     if (low == high) {
-        val padding = max(abs(low) * 0.05, 0.000001)
+        val padding = if (low == 0.0) 0.000001 else max(abs(low) * 0.05, Math.ulp(low))
         low = (low - padding).takeIf { it.isFinite() } ?: low
         high = (high + padding).takeIf { it.isFinite() } ?: high
     }

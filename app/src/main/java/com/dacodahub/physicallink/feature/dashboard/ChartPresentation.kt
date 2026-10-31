@@ -17,8 +17,9 @@ internal fun chartCurrentValue(state: DashboardWidgetState): String {
 internal fun chartAxisLabels(series: ChartSeries, precision: Int): Pair<String, String> {
     val low = formatSensorValue(series.minimum.toString(), "number", precision)
     val high = formatSensorValue(series.maximum.toString(), "number", precision)
-    return if (low != high) low to high else String.format(Locale.getDefault(), "%.3g", series.minimum) to
-        String.format(Locale.getDefault(), "%.3g", series.maximum)
+    if (low != high) return low to high
+    val compact = String.format(Locale.getDefault(), "%.3g", series.minimum) to String.format(Locale.getDefault(), "%.3g", series.maximum)
+    return if (compact.first != compact.second) compact else series.minimum.toString() to series.maximum.toString()
 }
 
 internal fun chartSummary(state: DashboardWidgetState, series: ChartSeries): String {
@@ -29,7 +30,7 @@ internal fun chartSummary(state: DashboardWidgetState, series: ChartSeries): Str
     val unit = sensorUnit(state.capability?.unit.orEmpty())
     val trend = if (segment.size < 2 || last.timeMs <= first.timeMs) "Trend unavailable: one sample in the latest segment."
         else "Latest recorded segment ${when { last.value > first.value -> "rose"; last.value < first.value -> "fell"; else -> "was unchanged" }} from ${number(first.value)} to ${number(last.value)} $unit over ${(last.timeMs - first.timeMs) / 1000} seconds."
-    return "${(state.capability?.name ?: sensorName(state.widget.source.capabilityId))}. Line chart, ${series.count} samples in the last ${state.widget.settings.chartWindowSeconds} seconds. Value axis ${axes.first} to ${axes.second} $unit. ${chartCurrentValue(state)}. ${freshnessLabel(state)}. $trend Gaps indicate missing updates; trend does not cross gaps."
+    return "${(state.capability?.name ?: sensorName(state.widget.source.capabilityId))}. Line chart, ${series.count} samples in the last ${state.widget.settings.chartWindowSeconds} seconds. Value axis ${axes.first} to ${axes.second} $unit. ${chartCurrentValue(state)}. ${freshnessLabel(state)}. $trend Gaps indicate missing updates; trend does not cross gaps. Values outside custom axes are clipped without changing recorded samples."
 }
 
 /** Receive-time coordinates: new samples enter at the right; age moves them left. */

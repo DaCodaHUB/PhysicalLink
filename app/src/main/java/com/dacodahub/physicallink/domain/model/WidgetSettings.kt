@@ -7,7 +7,9 @@ data class WidgetSettings(
     val lowerThreshold: Double? = null,
     val upperThreshold: Double? = null,
     val precision: Int = 2,
-    val staleAfterSeconds: Int = 15
+    val staleAfterSeconds: Int = 15,
+    val chartMinimum: Double? = null,
+    val chartMaximum: Double? = null
 ) {
     fun validationError(): String? = when {
         chartWindowSeconds !in listOf(60, 300, 900) -> "Choose a supported chart window."
@@ -15,10 +17,15 @@ data class WidgetSettings(
         staleAfterSeconds !in 1..3600 -> "Freshness must be between 1 and 3600 seconds."
         (minimum == null) != (maximum == null) -> "Set both minimum and maximum."
         minimum != null && maximum != null && (!minimum.isFinite() || !maximum.isFinite() ||
-            minimum >= maximum || !(maximum - minimum).isFinite()) -> "Minimum must be less than maximum, with a finite range."
+            minimum >= maximum) -> "Minimum and maximum must be finite and ordered."
         lowerThreshold != null && (!lowerThreshold.isFinite() || minimum == null || maximum == null || lowerThreshold !in minimum..maximum) -> "Low threshold must be inside the range."
         upperThreshold != null && (!upperThreshold.isFinite() || minimum == null || maximum == null || upperThreshold !in minimum..maximum) -> "High threshold must be inside the range."
         lowerThreshold != null && upperThreshold != null && lowerThreshold > upperThreshold -> "Low threshold must not exceed high threshold."
+        chartMinimum != null && !chartMinimum.isFinite() -> "Chart minimum must be finite."
+        chartMaximum != null && !chartMaximum.isFinite() -> "Chart maximum must be finite."
+        chartMinimum != null && chartMaximum != null && chartMinimum >= chartMaximum -> "Chart minimum must be less than maximum."
+        chartMinimum == Double.MAX_VALUE && chartMaximum == null -> "Chart minimum leaves no finite space above it."
+        chartMaximum == -Double.MAX_VALUE && chartMinimum == null -> "Chart maximum leaves no finite space below it."
         else -> null
     }
     val hasRange: Boolean get() = minimum != null && maximum != null && validationError() == null
@@ -30,7 +37,7 @@ fun rangeReading(value: Double?, settings: WidgetSettings): RangeReading? {
     if (value == null || !value.isFinite() || !settings.hasRange) return null
     val min = settings.minimum!!
     val max = settings.maximum!!
-    return RangeReading(((value.coerceIn(min, max) - min) / (max - min)).toFloat(), when {
+    return RangeReading(axisFraction(value.coerceIn(min, max), min, max), when {
         value < min -> BoundStatus.BELOW
         value > max -> BoundStatus.ABOVE
         else -> BoundStatus.INSIDE
