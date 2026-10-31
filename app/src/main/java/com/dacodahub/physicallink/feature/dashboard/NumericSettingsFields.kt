@@ -12,12 +12,14 @@ import com.dacodahub.physicallink.domain.model.WidgetType
 
 @Composable
 internal fun NumericSettingsFields(type: WidgetType, numeric: Boolean, draft: NumericSettingsDraft,
-    validation: NumericSettingsValidation, onChange: (NumericSettingsDraft) -> Unit) {
+    validation: NumericSettingsValidation, inlineDetails: Boolean = false, onChange: (NumericSettingsDraft) -> Unit) {
     if (type == WidgetType.CHART) {
-        Text("Chart time window")
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf(60, 300, 900).forEach { seconds -> FilterChip(selected = draft.window == seconds,
-                onClick = { onChange(draft.copy(window = seconds)) }, label = { Text("${seconds / 60} min") }, modifier = Modifier.heightIn(min = 48.dp)) }
+        if (!inlineDetails) {
+            Text("Chart time window")
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(60, 300, 900).forEach { seconds -> FilterChip(selected = draft.window == seconds,
+                    onClick = { onChange(draft.copy(window = seconds)) }, label = { Text("${seconds / 60} min") }, modifier = Modifier.heightIn(min = 48.dp)) }
+            }
         }
         Text("Y-axis minimum", style = MaterialTheme.typography.titleSmall)
         AxisMode(draft.autoMinimum, { onChange(draft.copy(autoMinimum = it)) }, "minimum")
@@ -30,11 +32,11 @@ internal fun NumericSettingsFields(type: WidgetType, numeric: Boolean, draft: Nu
     if (type == WidgetType.GAUGE || type == WidgetType.RANGE) {
         NumericInput("Minimum", draft.minimum, validation.errors[NumericField.MINIMUM]) { onChange(draft.copy(minimum = it)) }
         NumericInput("Maximum", draft.maximum, validation.errors[NumericField.MAXIMUM]) { onChange(draft.copy(maximum = it)) }
-        NumericInput("Lower threshold (optional)", draft.lower, validation.errors[NumericField.LOWER]) { onChange(draft.copy(lower = it)) }
-        NumericInput("Upper threshold (optional)", draft.upper, validation.errors[NumericField.UPPER]) { onChange(draft.copy(upper = it)) }
+        if (!inlineDetails || draft.lower.isNotEmpty()) NumericInput("Lower threshold (optional)", draft.lower, validation.errors[NumericField.LOWER]) { onChange(draft.copy(lower = it)) }
+        if (!inlineDetails || draft.upper.isNotEmpty()) NumericInput("Upper threshold (optional)", draft.upper, validation.errors[NumericField.UPPER]) { onChange(draft.copy(upper = it)) }
     }
     if (numeric) NumericInput("Decimal places (0-6)", draft.precision, validation.errors[NumericField.PRECISION], integer = true) { onChange(draft.copy(precision = it)) }
-    NumericInput("Stale after (seconds)", draft.freshness, validation.errors[NumericField.FRESHNESS], integer = true) { onChange(draft.copy(freshness = it)) }
+    if (!inlineDetails) NumericInput("Stale after (seconds)", draft.freshness, validation.errors[NumericField.FRESHNESS], integer = true) { onChange(draft.copy(freshness = it)) }
     validation.errors[NumericField.GENERAL]?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
 }
 @Composable

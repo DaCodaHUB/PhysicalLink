@@ -38,12 +38,12 @@ class VisualizationSettingsUiTest {
         compose.onNodeWithText("Gauge details").assertExists()
         compose.onNodeWithText("5 min").assertDoesNotExist()
         compose.onNodeWithContentDescription("12.345 \u03BCg").assertExists()
-        compose.onNodeWithContentDescription("Visualization settings").performClick()
+        compose.onNodeWithTag("sensor-details-list").performScrollToNode(hasText("Minimum"))
         compose.onNodeWithText("Minimum").performScrollTo().performTextReplacement("NaN")
-        compose.onNodeWithText("Save settings").performScrollTo().assertIsNotEnabled()
+        compose.onNodeWithText("Apply settings").performScrollTo().assertIsNotEnabled()
         assertEquals(repository.layout(), runBlocking { layouts.observe(repository.source.deviceId).first() })
         compose.onNodeWithText("Minimum").performScrollTo().performTextReplacement("-20")
-        compose.onNodeWithText("Save settings").performScrollTo().performClick()
+        compose.onNodeWithText("Apply settings").performScrollTo().performClick()
         compose.runOnIdle { target = target.copy(widgetId = "chart") }
         compose.onNodeWithText("Chart details").assertExists()
         compose.onNodeWithText("5 min").assertExists()
@@ -54,12 +54,50 @@ class VisualizationSettingsUiTest {
     }
     @Test fun `deleting a widget while details and settings are open closes the editor and disables saving`() {
         compose.setContent { PhysicalLinkTheme { SensorDetailsScreen(SensorDetailsTarget(repository.source, "gauge"), {}, vm) } }
-        compose.onNodeWithContentDescription("Visualization settings").performClick()
-        compose.onNodeWithText("Save settings").assertExists()
+        compose.onNodeWithTag("sensor-details-list").performScrollToNode(hasText("Minimum"))
+        compose.onNodeWithText("Minimum").performTextReplacement("-20")
+        compose.onNodeWithText("Apply settings").assertExists()
         compose.runOnIdle { layouts.update(repository.source.deviceId) { it!!.copy(widgets = it.widgets.filterNot { widget -> widget.id == "gauge" }) } }
         compose.onNodeWithText("Widget no longer available").assertExists()
-        compose.onNodeWithText("Save settings").assertDoesNotExist()
-        compose.onNodeWithContentDescription("Visualization settings").assertIsNotEnabled()
+        compose.onNodeWithText("Apply settings").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Visualization settings").assertDoesNotExist()
+    }
+    @Test fun `inline precision previews without persistence and cancel restores saved reading`() {
+        compose.setContent { PhysicalLinkTheme { SensorDetailsScreen(SensorDetailsTarget(repository.source, "gauge"), {}, vm) } }
+        compose.onNodeWithContentDescription("Visualization settings").assertDoesNotExist()
+        compose.onNodeWithText("Edit bounds and precision").assertDoesNotExist()
+        compose.onNodeWithTag("sensor-details-list").performScrollToNode(hasText("Decimal places (0-6)"))
+        compose.onNodeWithText("Decimal places (0-6)").performTextReplacement("1")
+        compose.onNodeWithTag("sensor-details-list").performScrollToIndex(0)
+        compose.onNodeWithContentDescription("12.3 \u03BCg").assertExists()
+        assertEquals(repository.layout(), runBlocking { layouts.observe(repository.source.deviceId).first() })
+        compose.onNodeWithTag("sensor-details-list").performScrollToNode(hasText("Cancel"))
+        compose.onNodeWithText("Cancel").performClick()
+        compose.onNodeWithTag("sensor-details-list").performScrollToIndex(0)
+        compose.onNodeWithContentDescription("12.345 \u03BCg").assertExists()
+        compose.onNodeWithTag("sensor-details-list").performScrollToNode(hasText("Minimum"))
+        listOf("-", "1e-", "Infinity", "NaN", "100").forEach { invalid ->
+            compose.onNodeWithText("Minimum").performTextReplacement(invalid)
+            compose.onNodeWithText("Apply settings").performScrollTo().assertIsNotEnabled()
+            assertEquals(repository.layout(), runBlocking { layouts.observe(repository.source.deviceId).first() })
+            compose.onNodeWithText("Minimum").performScrollTo()
+        }
+        compose.onNodeWithText("Cancel").performScrollTo().performClick()
+        assertEquals(repository.layout(), runBlocking { layouts.observe(repository.source.deviceId).first() })
+    }
+    @Test fun `leaving details discards unapplied drafts and reopening uses the saved widget`() {
+        var showing by mutableStateOf(true)
+        compose.setContent { PhysicalLinkTheme {
+            if (showing) SensorDetailsScreen(SensorDetailsTarget(repository.source, "gauge"), { showing = false }, vm)
+        } }
+        compose.onNodeWithTag("sensor-details-list").performScrollToNode(hasText("Minimum"))
+        compose.onNodeWithText("Minimum").performTextReplacement("-2e-6")
+        compose.onNodeWithContentDescription("Back to dashboard").performClick()
+        assertEquals(repository.layout(), runBlocking { layouts.observe(repository.source.deviceId).first() })
+        compose.runOnIdle { showing = true }
+        compose.onNodeWithTag("sensor-details-list").performScrollToNode(hasText("Minimum"))
+        compose.onNodeWithText("Minimum").assertTextContains("0.0")
+        compose.onNodeWithText("Apply settings").assertDoesNotExist()
     }
     @Test fun `dashboard numeric fields reject pasted text and preserve configuration until valid apply`() {
         var saved: WidgetSettings? = null

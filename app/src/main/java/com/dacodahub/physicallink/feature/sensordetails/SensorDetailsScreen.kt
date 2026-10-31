@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -26,31 +25,31 @@ internal fun SensorDetailsScreen(target: SensorDetailsTarget, onBack: () -> Unit
     val layout by viewModel.detailsLayout.collectAsStateWithLifecycle()
     val dashboard by viewModel.dashboard.collectAsStateWithLifecycle()
     val widget = layout?.widgets?.firstOrNull { it.id == target.widgetId && it.source == target.source }
-    var showSettings by rememberSaveable(target.source.deviceId, target.source.capabilityId, target.widgetId) { mutableStateOf(false) }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     LaunchedEffect(viewModel, lifecycle) {
         if (viewModel.isDemo) lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { viewModel.simulateDemoWhileVisible() }
     }
     val state = sensorDetailsState(target.source, input, configuredWidget = widget, widgetMissing = layout != null && widget == null)
         .copy(loadingWidget = layout == null)
-    LaunchedEffect(state.widgetMissing) { if (state.widgetMissing) showSettings = false }
-    SensorDetailsContent(state, onBack,
-        onWindow = { seconds -> widget?.let { viewModel.configureDetailsWidget(target.source, target.widgetId, it.settings.copy(chartWindowSeconds = seconds)) } },
-        onSettings = { showSettings = true }, persistenceError = dashboard.persistenceError)
-    if (showSettings && widget != null) VisualizationSettingsSheet(widget, onSave = {
-        viewModel.configureDetailsWidget(target.source, target.widgetId, it)
-        showSettings = false
-    }, onDismiss = { showSettings = false })
+    SensorDetailsContent(state, onBack, onApply = { settings ->
+        viewModel.configureDetailsWidget(target.source, target.widgetId, settings)
+    }, persistenceError = dashboard.persistenceError)
 }
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun SensorDetailsContent(state: SensorDetailsState, onBack: () -> Unit = {}, onWindow: (Int) -> Unit = {},
-    onSettings: () -> Unit = {}, persistenceError: String? = null) {
+internal fun SensorDetailsContent(state: SensorDetailsState, onBack: () -> Unit = {},
+    onApply: (WidgetSettings) -> Unit = {}, persistenceError: String? = null) {
+    val widget = state.reading.widget
+    var draft by remember(widget.source, widget.id, widget.settings) { mutableStateOf(NumericSettingsDraft.from(widget.settings)) }
+    val validation = validateNumericSettings(widget.type, widget.settings, draft)
+    val previewSettings = validation.settings ?: widget.settings
+    val preview = state.reading.copy(widget = widget.copy(settings = previewSettings))
+    val dirty = draft != NumericSettingsDraft.from(widget.settings)
     BackHandler(onBack = onBack)
     val capability = state.reading.capability
     val name = capability?.name ?: state.source.capabilityId
     val unit = capability?.unit
-    val stats = state.statistics
+    val stats = if (widget.type == WidgetType.CHART) preview.timeline?.let { historyStatistics(it.samples, preview.nowMs, previewSettings.chartWindowSeconds) } else null
     val type = state.reading.widget.type
     val title = when (type) { WidgetType.VALUE -> "Value details"; WidgetType.CHART -> "Chart details"; WidgetType.GAUGE -> "Gauge details"; WidgetType.RANGE -> "Range details" }
     CompositionLocalProvider(LocalWidgetAccent provides widgetAccent(state.source.capabilityId)) {
@@ -58,9 +57,6 @@ internal fun SensorDetailsContent(state: SensorDetailsState, onBack: () -> Unit 
             TopAppBar(title = { Text(if (state.loadingWidget || state.widgetMissing) "Sensor details" else title, style = MaterialTheme.typography.titleMedium) }, navigationIcon = {
                 IconButton(onClick = onBack, modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)
                     .semantics { contentDescription = "Back to dashboard" }) { ActionGlyph(Glyph.BACK) }
-            }, actions = {
-                IconButton(onClick = onSettings, enabled = !state.widgetMissing && !state.loadingWidget,
-                    modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp).semantics { contentDescription = "Visualization settings" }) { ActionGlyph(Glyph.SETTINGS) }
             })
         }) { padding ->
             Box(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding), contentAlignment = Alignment.TopCenter) {
@@ -78,7 +74,7 @@ internal fun SensorDetailsContent(state: SensorDetailsState, onBack: () -> Unit 
                     item {
                         WidgetContainer(name, status = (if (state.reading.simulated) "Simulated - " else "") + state.status,
                             statusIsAlert = state.status != "Live") {
-                            WidgetReading(state.reading)
+                            WidgetReading(preview)
                             Text(state.acquisitionAgeMs?.let { "Acquired ${it} ms ago" } ?: "Acquisition age unavailable",
                                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             if (state.missing) Text(if (state.status == "Disconnected") "Reconnect this device to view its sensor."
@@ -89,29 +85,52 @@ internal fun SensorDetailsContent(state: SensorDetailsState, onBack: () -> Unit 
                     item {
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             listOf(60, 300, 900).forEach { seconds ->
-                                FilterChip(selected = state.windowSeconds == seconds, onClick = { onWindow(seconds) },
+                                FilterChip(selected = draft.window == seconds, onClick = { draft = draft.copy(window = seconds) },
                                     label = { Text("${seconds / 60} min") }, modifier = Modifier.heightIn(min = 48.dp))
                             }
                         }
-                        Text("Acquisition time / last ${state.windowSeconds / 60} min / this session",
+                        Text("Acquisition time / last ${previewSettings.chartWindowSeconds / 60} min / this session",
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     item {
                         if (state.missing) DetailsSection("Reading history") {
                             Text("History unavailable for the current device/session.", style = MaterialTheme.typography.bodyMedium)
-                        } else ChartWidget(state.reading, showReading = false, showStatus = false, title = "Reading history")
+                        } else ChartWidget(preview, showReading = false, showStatus = false, title = "Reading history")
                         if (stats?.count == 1) Text("One sample recorded. More readings are needed to show a trend.",
                             style = MaterialTheme.typography.bodySmall)
                     }
+                    } else if (type == WidgetType.GAUGE || type == WidgetType.RANGE) {
+                        item {
+                            if (state.missing) DetailsSection("Visualization unavailable") { Text("Reconnect or restore this sensor to see its position.") }
+                            else BoundedWidget(preview, showReading = false, showStatus = false,
+                                titleOverride = if (type == WidgetType.GAUGE) "Gauge" else "Range position", large = true)
+                        }
+
+                    }
+                    item {
+                        DetailsSection(if (type == WidgetType.VALUE) "Display precision" else "Visualization settings") {
+                            NumericSettingsFields(type, true, draft, validation, inlineDetails = true) { draft = it }
+                            if (dirty) {
+                                Text("Preview only. Apply to save changes.", style = MaterialTheme.typography.bodySmall)
+                                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Button(onClick = { validation.settings?.let(onApply) }, enabled = validation.settings != null,
+                                        modifier = Modifier.heightIn(min = 48.dp)) { Text("Apply settings") }
+                                    OutlinedButton(onClick = { draft = NumericSettingsDraft.from(widget.settings) },
+                                        modifier = Modifier.heightIn(min = 48.dp)) { Text("Cancel") }
+                                }
+                            }
+                        }
+                    }
+                    if (type == WidgetType.CHART) {
                     item {
                         DetailsSection("History statistics") {
                             if (stats == null) Text("No valid retained samples in this window.", style = MaterialTheme.typography.bodyMedium)
                             else {
                                 Text("${stats.count} valid samples", style = MaterialTheme.typography.titleMedium)
                                 FlowRow(horizontalArrangement = Arrangement.spacedBy(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                                    Statistic("Minimum", stats.minimum.toString(), sensorUnit(unit.orEmpty()), state.reading.widget.settings.precision)
-                                    Statistic("Average", stats.average.toString(), sensorUnit(unit.orEmpty()), state.reading.widget.settings.precision)
-                                    Statistic("Maximum", stats.maximum.toString(), sensorUnit(unit.orEmpty()), state.reading.widget.settings.precision)
+                                    Statistic("Minimum", stats.minimum.toString(), sensorUnit(unit.orEmpty()), previewSettings.precision)
+                                    Statistic("Average", stats.average.toString(), sensorUnit(unit.orEmpty()), previewSettings.precision)
+                                    Statistic("Maximum", stats.maximum.toString(), sensorUnit(unit.orEmpty()), previewSettings.precision)
                                 }
                                 val now = state.reading.nowMs
                                 Text("Samples acquired ${(now - stats.firstMs) / 1000}s to ${(now - stats.lastMs) / 1000}s ago.",
@@ -119,18 +138,6 @@ internal fun SensorDetailsContent(state: SensorDetailsState, onBack: () -> Unit 
                             }
                         }
                     }
-                    } else if (type == WidgetType.GAUGE || type == WidgetType.RANGE) {
-                        item {
-                            if (state.missing) DetailsSection("Visualization unavailable") { Text("Reconnect or restore this sensor to see its position.") }
-                            else BoundedWidget(state.reading, showReading = false, showStatus = false,
-                                titleOverride = if (type == WidgetType.GAUGE) "Gauge" else "Range position", large = true)
-                        }
-                        item { TextButton(onClick = onSettings, modifier = Modifier.heightIn(min = 48.dp)) { Text("Edit bounds and precision") } }
-                    } else {
-                        item { DetailsSection("Display precision") {
-                            Text("${state.reading.widget.settings.precision} decimal places", style = MaterialTheme.typography.bodyMedium)
-                            TextButton(onClick = onSettings, modifier = Modifier.heightIn(min = 48.dp)) { Text("Edit precision") }
-                        } }
                     }
                     item {
                         DetailsSection("Sensor information") {

@@ -11,7 +11,6 @@ import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import com.dacodahub.physicallink.core.designsystem.theme.PhysicalLinkTheme
 import com.dacodahub.physicallink.domain.model.*
-import com.dacodahub.physicallink.feature.dashboard.VisualizationSettingsSheet
 import java.io.File
 import org.junit.*
 import org.junit.Assert.*
@@ -73,6 +72,15 @@ class WidgetDetailsVisualTest {
             if (type != WidgetType.CHART) compose.onNodeWithText("Reading history").assertDoesNotExist()
             if (case == "unavailable") compose.onNodeWithContentDescription("Measurement unavailable").assertExists()
             save(name)
+            if (case == "normal") {
+                compose.onNodeWithTag("sensor-details-list").performScrollToNode(hasText("Decimal places (0-6)"))
+                compose.onNodeWithText("Decimal places (0-6)").performTextReplacement("3")
+                compose.onNodeWithText("Apply settings").performScrollTo().assertIsEnabled()
+                compose.onNodeWithTag("sensor-details-list").performScrollToNode(hasText(if (type == WidgetType.VALUE) "Display precision" else "Visualization settings"))
+                compose.onNodeWithText("Apply settings").assertIsDisplayed()
+                save("$name-editing")
+                compose.onNodeWithText("Cancel").performClick()
+            }
             if (type == WidgetType.CHART) {
                 compose.onNodeWithTag("sensor-details-list").performScrollToNode(hasText("History statistics"))
                 compose.onNodeWithText("5 valid samples").assertExists()
@@ -83,10 +91,53 @@ class WidgetDetailsVisualTest {
         } }
     }
     private fun invalidSettings(dark: Boolean) {
-        compose.setContent { PhysicalLinkTheme(darkTheme = dark) { VisualizationSettingsSheet(widget(WidgetType.GAUGE), {}, {}) } }
-        compose.onNodeWithText("Minimum").performScrollTo().performTextReplacement("not a number")
-        compose.onNodeWithText("Save settings").performScrollTo().assertIsNotEnabled()
-        save("invalid-settings-${if (dark) "dark" else "light"}")
+        compose.setContent { PhysicalLinkTheme(darkTheme = dark) {
+            SensorDetailsContent(sensorDetailsState(source, input("normal"), configuredWidget = widget(WidgetType.GAUGE)))
+        } }
+        compose.onNodeWithTag("sensor-details-list").performScrollToNode(hasText("Minimum"))
+        compose.onNodeWithText("Minimum").performTextReplacement("not a number")
+        compose.onNodeWithText("Apply settings").performScrollTo().assertIsNotEnabled()
+        save("inline-invalid-${if (dark) "dark" else "light"}")
+    }
+    @Test fun `bounded previews change position immediately and cancel restores each presentation`() {
+        var type by mutableStateOf(WidgetType.GAUGE)
+        var saves = 0
+        compose.setContent { PhysicalLinkTheme { key(type) {
+            SensorDetailsContent(sensorDetailsState(source, input("normal"), configuredWidget = widget(type)), onApply = { saves++ })
+        } } }
+        listOf(WidgetType.GAUGE, WidgetType.RANGE).forEach { selected ->
+            compose.runOnIdle { type = selected }
+            compose.onNodeWithContentDescription("Within configured bounds").assertExists()
+            compose.onNodeWithTag("sensor-details-list").performScrollToNode(hasText("Minimum"))
+            compose.onNodeWithText("Minimum").performTextReplacement("0")
+            compose.onNodeWithTag("sensor-details-list").performScrollToIndex(0)
+            compose.onNodeWithContentDescription("Below configured minimum").assertExists()
+            assertEquals(0, saves)
+            compose.onNodeWithTag("sensor-details-list").performScrollToNode(hasText("Cancel"))
+            compose.onNodeWithText("Cancel").performClick()
+            compose.onNodeWithTag("sensor-details-list").performScrollToIndex(0)
+            compose.onNodeWithContentDescription("Within configured bounds").assertExists()
+        }
+    }
+    @Test fun `chart previews custom axes and reset without saving draft`() {
+        var saved: WidgetSettings? = null
+        compose.setContent { PhysicalLinkTheme {
+            SensorDetailsContent(sensorDetailsState(source, input("normal"), configuredWidget = widget(WidgetType.CHART)), onApply = { saved = it })
+        } }
+        compose.onNodeWithTag("sensor-details-list").performScrollToNode(hasText("Chart minimum"))
+        compose.onNodeWithText("Chart minimum").performTextReplacement("-0.5")
+        compose.onNodeWithTag("sensor-details-list").performScrollToIndex(2)
+        compose.onNodeWithContentDescription("Value axis -0.5000", substring = true).assertExists()
+        assertNull(saved)
+        compose.onNodeWithTag("sensor-details-list").performScrollToNode(hasText("Custom maximum"))
+        compose.onNodeWithText("Custom maximum").performClick()
+        compose.onNodeWithText("Chart maximum").performScrollTo().performTextReplacement("-1")
+        compose.onNodeWithText("Apply settings").performScrollTo().assertIsNotEnabled()
+        compose.onNodeWithText("Reset axes to Auto").performScrollTo().performClick()
+        compose.onNodeWithText("Apply settings").performScrollTo().performClick()
+        assertNull(saved!!.chartMinimum)
+        assertNull(saved!!.chartMaximum)
+        assertEquals(4, saved!!.precision)
     }
     @Test fun light() = capture(false)
     @Test fun dark() = capture(true)

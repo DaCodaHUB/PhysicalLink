@@ -61,7 +61,7 @@ class SensorDetailsVisualTest {
             val density = LocalDensity.current
             CompositionLocalProvider(LocalDensity provides Density(density.density, if (large) 1.6f else 1f)) {
                 PhysicalLinkTheme(darkTheme = dark) { key(case) {
-                    SensorDetailsContent(sensorDetailsState(source, fixture(case), window), onWindow = { window = it })
+                    SensorDetailsContent(sensorDetailsState(source, fixture(case), window), onApply = { window = it.chartWindowSeconds })
                 } }
             }
         }
@@ -75,7 +75,7 @@ class SensorDetailsVisualTest {
             save(name)
             compose.onNodeWithTag("sensor-details-list").performScrollToIndex(3)
             save("$name-statistics")
-            compose.onNodeWithTag("sensor-details-list").performScrollToIndex(4)
+            compose.onNodeWithTag("sensor-details-list").performScrollToNode(hasText("Sensor information"))
             compose.onAllNodesWithText(source.capabilityId).onLast().assertExists()
             val id = compose.onAllNodesWithText(source.capabilityId).onLast().getUnclippedBoundsInRoot()
             val nextLabel = compose.onNodeWithText("Display name").getUnclippedBoundsInRoot()
@@ -90,10 +90,11 @@ class SensorDetailsVisualTest {
     @Test fun `windows are bounded and show honest empty statistics`() {
         var window by mutableIntStateOf(300)
         compose.setContent { PhysicalLinkTheme {
-            SensorDetailsContent(sensorDetailsState(source, fixture("empty"), window), onWindow = { window = it })
+            SensorDetailsContent(sensorDetailsState(source, fixture("empty"), window), onApply = { window = it.chartWindowSeconds })
         } }
         compose.onNodeWithText("15 min").performClick()
-        assertEquals(900, window)
+        assertEquals(300, window)
+        compose.onNodeWithText("Acquisition time / last 15 min / this session").assertExists()
         compose.onNodeWithTag("sensor-details-list").performScrollToNode(hasText("History statistics"))
         compose.onNodeWithText("No valid retained samples in this window.").assertExists()
     }
