@@ -1,19 +1,14 @@
-<?xml version="1.0" encoding="utf-8"?><!--
-   Sample data extraction rules file; uncomment and customize as necessary.
-   See https://developer.android.com/about/versions/12/backup-restore#xml-changes
-   for details.
--->
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 12+: keep both allowlists in sync with backup_rules.
+     BLE connections, scans, readings, and history are memory-only and have no files
+     to exclude. Do not broaden these paths to the entire datastore directory. -->
 <data-extraction-rules>
     <cloud-backup>
-        <!-- TODO: Use <include> and <exclude> to control what is backed up.
-        <include .../>
-        <exclude .../>
-        -->
+        <include domain="file" path="datastore/dashboard_layouts.preferences_pb" />
+        <include domain="file" path="datastore/appearance.preferences_pb" />
     </cloud-backup>
-    <!--
     <device-transfer>
-        <include .../>
-        <exclude .../>
+        <include domain="file" path="datastore/dashboard_layouts.preferences_pb" />
+        <include domain="file" path="datastore/appearance.preferences_pb" />
     </device-transfer>
-    -->
 </data-extraction-rules>

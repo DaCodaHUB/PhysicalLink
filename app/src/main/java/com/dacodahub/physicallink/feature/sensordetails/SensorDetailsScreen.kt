@@ -149,7 +149,7 @@ internal fun SensorDetailsContent(state: SensorDetailsState, onBack: () -> Unit 
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
                             state.deviceName?.let { Info("Device", it) }
                             Info("Device ID", state.source.deviceId)
-                            Text("History is bounded to this session and is not saved permanently.",
+                            Text("History is held temporarily in memory and may remain after disconnection or session end. It is lost when the app process ends.",
                                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }

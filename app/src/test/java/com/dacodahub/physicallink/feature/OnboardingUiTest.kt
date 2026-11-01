@@ -68,6 +68,9 @@ class OnboardingUiTest {
         compose.onNodeWithText(gettingStartedSections[2].second).performScrollTo().assertExists()
         compose.onNodeWithText(gettingStartedSections[3].second).performScrollTo().assertExists()
         compose.onNodeWithText(gettingStartedSections[5].second).performScrollTo().assertExists()
+        compose.onNodeWithText("Charts use temporary in-memory history, which may remain after disconnection until the app process ends; reconnecting starts a new history.",
+            substring = true).performScrollTo().assertExists()
+        compose.onNodeWithText("Privacy Policy").assertExists()
         compose.onNodeWithText("Close guide").performClick()
         compose.onNodeWithText("Getting Started").assertDoesNotExist()
         compose.onNodeWithContentDescription("Getting Started").performClick()

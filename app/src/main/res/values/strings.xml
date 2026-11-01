@@ -1,3 +1,7 @@
 <resources>
     <string name="app_name">PhysicalLink</string>
+    <string name="privacy_policy">Privacy Policy</string>
+    <string name="privacy_policy_open_failed">Unable to open Privacy Policy</string>
+    <string name="privacy_policy_browser_help">Install or enable a browser, or select and copy this address to open it on another device.</string>
+    <string name="close_privacy_message">Close</string>
 </resources>

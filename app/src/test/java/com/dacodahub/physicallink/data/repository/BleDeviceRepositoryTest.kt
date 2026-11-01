@@ -44,6 +44,22 @@ class BleDeviceRepositoryTest {
         repository = BleDeviceRepository(context)
     }
     @After fun cleanup() { repository.disconnect(); shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(6)) }
+    @Test fun `fresh process starts disconnected with no selected device readings history or scans`() {
+        repository.refreshBluetoothState()
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(ConnectionState.Disconnected, repository.connectionState.value)
+        assertNull(repository.connectedDeviceId.value)
+        assertNull(repository.dashboardDeviceId.value)
+        assertNull(repository.manifest.value)
+        assertNull(repository.capabilities.value)
+        assertTrue(repository.sensorValues.value.isEmpty())
+        assertTrue(repository.sensorHistory.value.sensors.isEmpty())
+        assertFalse(repository.sensorHistory.value.active)
+        assertTrue(repository.devices.value.isEmpty())
+        assertEquals(com.dacodahub.physicallink.domain.model.ScanState.Idle, repository.scanState.value)
+        verify(adapter, never()).getRemoteDevice(anyString())
+        verify(scanner, never()).startScan(isNull(), any(ScanSettings::class.java), any(ScanCallback::class.java))
+    }
     @Test fun `adapter broadcast closes a session without reconnecting`() {
         repository.connect("AA:BB:CC:DD:EE:FF")
         `when`(adapter.isEnabled).thenReturn(false)

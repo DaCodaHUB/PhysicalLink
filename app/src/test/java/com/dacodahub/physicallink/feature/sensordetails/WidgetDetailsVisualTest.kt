@@ -87,6 +87,7 @@ class WidgetDetailsVisualTest {
                 save("$name-statistics")
             }
             compose.onNodeWithTag("sensor-details-list").performScrollToNode(hasText("Sensor information"))
+            compose.onNodeWithText("History is held temporarily in memory and may remain after disconnection or session end. It is lost when the app process ends.").assertExists()
             save("$name-info")
         } }
     }
