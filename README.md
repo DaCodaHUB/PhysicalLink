@@ -6,6 +6,12 @@ PhysicalLink is a local-first, sensor-agnostic project combining a reusable **ES
 
 > **Project status:** Engineering portfolio / demonstration project. PhysicalLink previously reached a Google Play **internal testing** release and a PlatformIO library release. Store/registry withdrawal was requested, but successful removal has not been verified here. Do not assume public installation links are currently available. The Android source is maintained separately and is not linked publicly in this README.
 
+## Screenshots
+
+| Device overview | Greenhouse dashboard |
+| --- | --- |
+| <img src="screenshots/device-overview.png" alt="Device overview showing My Greenhouse connected over Bluetooth" width="270"> | <img src="screenshots/greenhouse-dashboard.png" alt="My Greenhouse dashboard showing live temperature and humidity" width="270"> |
+
 ## What it does
 
 - **Discovers ESP32 sensors automatically.** Firmware advertises each sensor's stable ID, display name, unit, and numeric readings.
