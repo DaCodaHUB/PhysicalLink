@@ -19,3 +19,4 @@ local.properties
 firmware/ConsumerTest/package/
 firmware/releases/
 artifacts/
+app/release/
